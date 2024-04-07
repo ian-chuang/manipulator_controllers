@@ -1,0 +1,6 @@
+impedance_pose_controller:
+  dummy: {
+    type: string_array,
+    description: "Specifies which joints will be used by the controller. ",
+    read_only: true
+  }

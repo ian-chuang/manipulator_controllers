@@ -1,0 +1,9 @@
+<library path="manipulator_controllers">
+  <class name="manipulator_controllers/ImpedancePoseController"
+         type="manipulator_controllers::ImpedancePoseController"
+         base_class_type="controller_interface::ChainableControllerInterface">
+    <description>
+      ImpedancePoseController ros2_control controller.
+    </description>
+  </class>
+</library>
