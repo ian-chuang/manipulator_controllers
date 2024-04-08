@@ -148,7 +148,10 @@ protected:
   // reference_admittance_: reference value used by the controller after the admittance values are
   // applied ft_values_: values read from the force torque sensor
   trajectory_msgs::msg::JointTrajectoryPoint joint_reference_, joint_state_, joint_command_;
+  geometry_msgs::msg::PoseStamped pose_reference_;
   // geometry_msgs::msg::Wrench ft_values_;
+
+  bool using_joint_reference_interface_;
 
   // Kinematics interface plugin loader
   std::unique_ptr<manipulator_controllers::IKSolver> ik_solver_;

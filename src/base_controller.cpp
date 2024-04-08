@@ -42,6 +42,8 @@ controller_interface::CallbackReturn BaseController::on_init()
   joint_reference_ = last_joint_reference_;
   joint_command_ = last_joint_reference_;
   joint_state_ = last_joint_reference_;
+  pose_reference_ = geometry_msgs::msg::PoseStamped();
+  using_joint_reference_ = true;
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -387,6 +389,13 @@ controller_interface::return_type BaseController::update_reference_from_subscrib
   // }
 
   pose_command_msg_ = *input_pose_command_.readFromRT();
+  if (pose_command_msg_.get())
+  {
+    last_pose_reference_ = pose_command_msg_->pose;
+    using_joint_reference_interface_ = false;
+  }
+
+  RCLCPP_INFO(get_node()->get_logger(), "using_joint_reference_interface_ is %d", using_joint_reference_interface_);
 
   joint_command_msg_ = *input_joint_command_.readFromRT();
 
@@ -589,6 +598,13 @@ void BaseController::read_state_reference_interfaces(
       velocity_reference_[i].get() = last_joint_reference_.velocities[i];
     }
     state_reference.velocities[i] = velocity_reference_[i];
+  }
+
+  if (
+    state_reference.positions != last_joint_reference_.positions ||
+    state_reference.velocities != last_joint_reference_.velocities)
+  {
+    using_joint_reference_interface_ = true;
   }
 
   last_joint_reference_.positions = state_reference.positions;

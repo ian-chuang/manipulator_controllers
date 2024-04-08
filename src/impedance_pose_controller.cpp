@@ -98,8 +98,8 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
 
   // get target pose
   Eigen::Isometry3d target_pose;
-  if (pose_command_msg_.get()) {
-    tf2::fromMsg(pose_command_msg_->pose, target_pose);
+  if (!using_joint_reference_interface_)
+    tf2::fromMsg(pose_reference_, target_pose);
   } 
   else {
     vec_to_eigen(joint_state_.positions, joint_ref_pos_);
