@@ -1,9 +1,4 @@
 base_force_controller:
-  dummy: {
-    type: string_array,
-    description: "Specifies which joints will be used by the controller. ",
-    read_only: true
-  }
   ft_sensor:
     name: {
       type: string,
@@ -19,3 +14,28 @@ base_force_controller:
       default_value: 0.05,
       description: "Specifies the filter coefficient for the sensor's exponential filter."
     }
+  fixed_world_frame: # Gravity points down (neg. Z) in this frame (Usually: world or base_link)
+    frame:
+      id: {
+        type: string,
+        description: "Specifies the world frame use for admittance calculation. Gravity must point down in this frame."
+      }
+  gravity_compensation:
+    frame:
+      id: {
+        type: string,
+        description: "Specifies the frame which center of gravity (CoG) is defined in. Normally, the force torque sensor frame should be used."
+      }
+    CoG:
+      pos: {
+        type: double_array,
+        description: "Specifies the position of the center of gravity (CoG) of the end effector in the gravity compensation frame.",
+        validation: {
+          fixed_size<>: 3
+        }
+      }
+      force: {
+        type: double,
+        default_value: 0.0,
+        description: "Specifies the weight of the end effector, e.g mass * 9.81."
+      }

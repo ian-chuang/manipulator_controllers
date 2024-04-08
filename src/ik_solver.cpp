@@ -6,14 +6,13 @@ namespace manipulator_controllers
 bool IKSolver::initialize(
   std::shared_ptr<rclcpp::node_interfaces::NodeParametersInterface> parameters_interface,
   const std::string & base_link,
-  const std::string & ee_link,
-  double alpha
+  const std::string & ee_link
 ) {
   initialized_ = true;
   base_link_ = base_link;
   ee_link_ = ee_link;
   parameters_interface_ = parameters_interface;
-  alpha_ = alpha;
+  // alpha_ = alpha;
 
   // get robot description
   auto robot_param = rclcpp::Parameter();
@@ -45,26 +44,88 @@ bool IKSolver::initialize(
   num_joints_ = chain_.getNrOfJoints();
   q_ = KDL::JntArray(num_joints_);
   q_dot_ = KDL::JntArray(num_joints_);
-  I_ = Eigen::MatrixXd(num_joints_, num_joints_);
-  I_.setIdentity();
+  jacobian_ = std::make_shared<KDL::Jacobian>(num_joints_);
+  // I_ = Eigen::MatrixXd(num_joints_, num_joints_);
+  // I_.setIdentity();
   // create KDL solvers
   fk_pos_solver_ = std::make_shared<KDL::ChainFkSolverPos_recursive>(chain_);
   fk_vel_solver_ = std::make_shared<KDL::ChainFkSolverVel_recursive>(chain_);
   jac_solver_ = std::make_shared<KDL::ChainJntToJacSolver>(chain_);
-  jacobian_ = std::make_shared<KDL::Jacobian>(num_joints_);
 
   return true;
 }
 
-bool IKSolver::convert_cartesian_deltas_to_joint_deltas(
-  const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos,
-  const Eigen::Matrix<double, 6, 1> & delta_x, const std::string & link_name,
-  Eigen::Matrix<double, Eigen::Dynamic, 1> & delta_theta)
+// bool IKSolver::convert_cartesian_deltas_to_joint_deltas(
+//   const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos,
+//   const Eigen::Matrix<double, 6, 1> & delta_x, const std::string & link_name,
+//   Eigen::Matrix<double, Eigen::Dynamic, 1> & delta_theta)
+// {
+//   // verify inputs
+//   if (
+//     !verify_initialized() || !verify_joint_vector(joint_pos) || !verify_link_name(link_name) ||
+//     !verify_joint_vector(delta_theta))
+//   {
+//     return false;
+//   }
+
+//   // get joint array
+//   q_.data = joint_pos;
+
+//   // calculate Jacobian
+//   jac_solver_->JntToJac(q_, *jacobian_, link_name_map_[link_name]);
+//   // TODO(anyone): this dynamic allocation needs to be replaced
+//   Eigen::Matrix<double, 6, Eigen::Dynamic> J = jacobian_->data;
+//   // damped inverse
+//   Eigen::Matrix<double, Eigen::Dynamic, 6> J_inverse =
+//     (J.transpose() * J + alpha_ * I_).inverse() * J.transpose();
+//   delta_theta = J_inverse * delta_x;
+
+//   return true;
+// }
+
+// bool IKSolver::calculate_link_transform(
+//   const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos, const std::string & link_name,
+//   Eigen::Isometry3d & pose)
+// {
+//   // verify inputs
+//   if (!verify_initialized() || !verify_joint_vector(joint_pos) || !verify_link_name(link_name))
+//   {
+//     return false;
+//   }
+
+//   // get joint array
+//   q_.data = joint_pos;
+
+//   // reset transform_vec
+//   pose.setIdentity();
+
+//   // special case: since the root is not in the robot tree, need to return identity transform
+//   if (link_name == base_link_)
+//   {
+//     return true;
+//   }
+
+//   // get child frame
+//   fk_pos_solver_->JntToCart(q_, frame_, link_name_map_[link_name]);
+//   tf2::transformKDLToEigen(frame_, pose);
+//   return true;
+// }
+
+
+bool IKSolver::calculate_link_transform(
+  const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos, 
+  const std::string & parent_link,
+  const std::string & child_link,
+  Eigen::Isometry3d & pose
+)
 {
   // verify inputs
   if (
-    !verify_initialized() || !verify_joint_vector(joint_pos) || !verify_link_name(link_name) ||
-    !verify_joint_vector(delta_theta))
+    !verify_initialized() || 
+    !verify_joint_vector(joint_pos) || 
+    !verify_link_name(parent_link) ||
+    !verify_link_name(child_link)
+  )
   {
     return false;
   }
@@ -72,43 +133,19 @@ bool IKSolver::convert_cartesian_deltas_to_joint_deltas(
   // get joint array
   q_.data = joint_pos;
 
-  // calculate Jacobian
-  jac_solver_->JntToJac(q_, *jacobian_, link_name_map_[link_name]);
-  // TODO(anyone): this dynamic allocation needs to be replaced
-  Eigen::Matrix<double, 6, Eigen::Dynamic> J = jacobian_->data;
-  // damped inverse
-  Eigen::Matrix<double, Eigen::Dynamic, 6> J_inverse =
-    (J.transpose() * J + alpha_ * I_).inverse() * J.transpose();
-  delta_theta = J_inverse * delta_x;
+  KDL::Frame parent_frame;
+  KDL::Frame child_frame;
+  Eigen::Isometry3d parent_transform;
+  Eigen::Isometry3d child_transform;
 
-  return true;
-}
+  fk_pos_solver_->JntToCart(q_, parent_frame, link_name_map_[parent_link]);
+  fk_pos_solver_->JntToCart(q_, child_frame, link_name_map_[child_link]);
 
-bool IKSolver::calculate_link_transform(
-  const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos, const std::string & link_name,
-  Eigen::Isometry3d & pose)
-{
-  // verify inputs
-  if (!verify_initialized() || !verify_joint_vector(joint_pos) || !verify_link_name(link_name))
-  {
-    return false;
-  }
+  tf2::transformKDLToEigen(parent_frame, parent_transform);
+  tf2::transformKDLToEigen(child_frame, child_transform);
 
-  // get joint array
-  q_.data = joint_pos;
-
-  // reset transform_vec
-  pose.setIdentity();
-
-  // special case: since the root is not in the robot tree, need to return identity transform
-  if (link_name == base_link_)
-  {
-    return true;
-  }
-
-  // create forward kinematics solver
-  fk_pos_solver_->JntToCart(q_, frame_, link_name_map_[link_name]);
-  tf2::transformKDLToEigen(frame_, pose);
+  pose = parent_transform.inverse() * child_transform;
+  
   return true;
 }
 
@@ -159,8 +196,8 @@ bool IKSolver::calculate_jacobian(
 {
   // verify inputs
   if (
-    !verify_initialized() || !verify_joint_vector(joint_pos) || !verify_link_name(link_name) ||
-    !verify_jacobian(jacobian))
+    !verify_initialized() || !verify_joint_vector(joint_pos) || !verify_link_name(link_name)
+    )
   {
     return false;
   }

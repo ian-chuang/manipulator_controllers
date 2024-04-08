@@ -301,8 +301,8 @@ controller_interface::CallbackReturn BaseController::on_configure(
   ik_solver_ = std::make_unique<IKSolver>();
   if (
     !ik_solver_->initialize(
-      get_node()->get_node_parameters_interface(), base_controller_parameters_.kinematics.base,
-      base_controller_parameters_.kinematics.tip, base_controller_parameters_.kinematics.alpha
+      get_node()->get_node_parameters_interface(), base_controller_parameters_.kinematics.chain_base,
+      base_controller_parameters_.kinematics.chain_tip
     )
   )
   {

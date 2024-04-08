@@ -13,6 +13,11 @@ pose_controller:
   #       fixed_size<>: 6
   #     }
   #   }
+  lms_damping: {
+      type: double,
+      default_value: 0.01,
+      description: "Specifies the damping coefficient for the Jacobian pseudo inverse."
+    }
   k: {
     type: double_array,
     description: "Specifies the stiffness values for x, y, z, rx, ry, and rz used in the admittance calculation.",

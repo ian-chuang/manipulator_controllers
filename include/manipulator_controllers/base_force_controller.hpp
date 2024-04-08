@@ -12,6 +12,8 @@
 #include "manipulator_controllers/base_controller.hpp"
 #include "semantic_components/force_torque_sensor.hpp"
 #include "geometry_msgs/msg/wrench_stamped.hpp"
+#include "std_srvs/srv/trigger.hpp"
+#include "realtime_tools/realtime_publisher.h"
 
 namespace manipulator_controllers
 {
@@ -33,11 +35,44 @@ public:
     const rclcpp_lifecycle::State & previous_state) override;
 
 protected:
+
+  void process_wrench_measurements(
+    const Eigen::VectorXd & joint_pos,
+    const geometry_msgs::msg::Wrench & measured_wrench);
+
+  template <typename T1, typename T2>
+  void vec_to_eigen(const std::vector<T1> & data, T2 & matrix) 
+  {
+    for (auto col = 0; col < matrix.cols(); col++)
+    {
+      for (auto row = 0; row < matrix.rows(); row++)
+      {
+        matrix(row, col) = data[row + col * matrix.rows()];
+      }
+    }
+  }
+
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr zero_wrench_service_;
+  std::atomic<bool> zero_wrench_flag_;
+  Eigen::Matrix<double, 6, 1> zero_wrench_offset_;
+
+  rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr w_publisher_;
+  std::unique_ptr<realtime_tools::RealtimePublisher<geometry_msgs::msg::WrenchStamped>> wrench_publisher_;
+
   // force torque sensor
   std::unique_ptr<semantic_components::ForceTorqueSensor> force_torque_sensor_;
 
   // control loop data
   geometry_msgs::msg::Wrench ft_values_;
+
+  // filtered wrench in base frame
+  Eigen::Matrix<double, 6, 1> base_wrench_;
+
+  // position of center of gravity in cog_frame
+  Eigen::Vector3d cog_pos_;
+
+  // force applied to sensor due to weight of end effector
+  Eigen::Vector3d end_effector_weight_;
 
   // base force parameters
   std::shared_ptr<base_force_controller::ParamListener> base_force_controller_parameter_handler_;

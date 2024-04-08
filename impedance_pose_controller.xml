@@ -1,4 +1,4 @@
-<library path="manipulator_controllers">
+<library path="impedance_pose_controller">
   <class name="manipulator_controllers/ImpedancePoseController"
          type="manipulator_controllers::ImpedancePoseController"
          base_class_type="controller_interface::ChainableControllerInterface">

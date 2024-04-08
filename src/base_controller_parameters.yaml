@@ -32,18 +32,21 @@ base_controller:
     }
 
   kinematics:
-    base: {
+    chain_base: {
       type: string,
       description: "Specifies the base link of the robot description used by KDL."
     }
-    tip: {
+    chain_tip: {
       type: string,
       description: "Specifies the end effector link of the robot description used by KDL."
     }
-    alpha: {
-      type: double,
-      default_value: 0.01,
-      description: "Specifies the damping coefficient for the Jacobian pseudo inverse."
+    base_link: {
+      type: string,
+      description: "Specifies the base link of the robot description used by KDL."
+    }
+    end_effector_link: {
+      type: string,
+      description: "Specifies the end effector link of the robot description used by KDL."
     }
 
   # ft_sensor:

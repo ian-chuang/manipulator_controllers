@@ -1,6 +1,51 @@
 impedance_pose_controller:
-  dummy: {
-    type: string_array,
-    description: "Specifies which joints will be used by the controller. ",
-    read_only: true
+  control:
+    frame:
+      id: {
+        type: string,
+        description: "Specifies the control frame used for admittance calculation."
+      }
+  lms_damping: {
+      type: double,
+      default_value: 0.01,
+      description: "Specifies the damping coefficient for the Jacobian pseudo inverse."
+    }
+  stiffness: {
+    type: double_array,
+    description: "Specifies the stiffness values for x, y, z, rx, ry, and rz used in the admittance calculation.",
+    validation: {
+      fixed_size<>: 6,
+      element_bounds<>: [ 0.0, 100000000.0 ]
+    }
+  }
+  damping_ratio: {
+      type: double_array,
+      description: "Specifies damping ratio values for x, y, z, rx, ry, and rz used in the admittance calculation.
+      The damping ratio is defined as: zeta = D / (2 * sqrt( M * S )).",
+      validation: {
+        fixed_size<>: 6
+      }
+    }
+  joint_damping: {
+      type: double,
+      description: "Specifies the joint damping applied used in the admittance calculation.",
+      default_value: 5,
+      validation: {
+        gt_eq: [ 0.0 ]
+      }
+    }
+  selected_axes: {
+    type: bool_array,
+    description: "Specifies whether the axes x, y, z, rx, ry, and rz should be included in the admittance calculation.",
+    validation: {
+      fixed_size<>: 6
+    }
+  }
+  mass: {
+    type: double_array,
+    description: "Specifies the mass values for x, y, z, rx, ry, and rz used in the admittance calculation.",
+    validation: {
+      fixed_size<>: 6,
+      element_bounds<>: [ 0.0001, 1000000.0 ]
+    }
   }
