@@ -40,9 +40,13 @@ protected:
   Eigen::Matrix<double, 6, 1> selected_axes_;
   Eigen::Matrix<double, 6, 1> mass_;
   Eigen::Matrix<double, 6, 1> mass_inv_;
-  Eigen::VectorXd joint_pos_;
-  Eigen::VectorXd joint_vel_;
   Eigen::VectorXd joint_ref_pos_;
+  Eigen::VectorXd joint_cur_pos_;
+  Eigen::VectorXd joint_cur_vel_;
+  Eigen::VectorXd joint_des_pos_;
+  Eigen::VectorXd joint_des_vel_;
+  Eigen::VectorXd joint_des_acc_;
+  
   Eigen::MatrixXd I_;
 
   template <typename T1, typename T2>

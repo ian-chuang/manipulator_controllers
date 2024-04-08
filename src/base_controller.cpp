@@ -43,7 +43,7 @@ controller_interface::CallbackReturn BaseController::on_init()
   joint_command_ = last_joint_reference_;
   joint_state_ = last_joint_reference_;
   pose_reference_ = geometry_msgs::msg::PoseStamped();
-  using_joint_reference_ = true;
+  using_joint_reference_interface_ = true;
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -391,11 +391,9 @@ controller_interface::return_type BaseController::update_reference_from_subscrib
   pose_command_msg_ = *input_pose_command_.readFromRT();
   if (pose_command_msg_.get())
   {
-    last_pose_reference_ = pose_command_msg_->pose;
+    pose_reference_ = *pose_command_msg_;
     using_joint_reference_interface_ = false;
   }
-
-  RCLCPP_INFO(get_node()->get_logger(), "using_joint_reference_interface_ is %d", using_joint_reference_interface_);
 
   joint_command_msg_ = *input_joint_command_.readFromRT();
 

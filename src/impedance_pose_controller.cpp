@@ -47,9 +47,12 @@ controller_interface::CallbackReturn ImpedancePoseController::on_configure(
   vec_to_eigen(impedance_pose_controller_parameters_.damping_ratio, damping_ratio_);
   vec_to_eigen(impedance_pose_controller_parameters_.selected_axes, selected_axes_);
   vec_to_eigen(impedance_pose_controller_parameters_.mass, mass_);
-  joint_pos_ = Eigen::VectorXd::Zero(num_joints_);
-  joint_vel_ = Eigen::VectorXd::Zero(num_joints_);
   joint_ref_pos_ = Eigen::VectorXd::Zero(num_joints_);
+  joint_cur_pos_ = Eigen::VectorXd::Zero(num_joints_);
+  joint_cur_vel_ = Eigen::VectorXd::Zero(num_joints_);
+  joint_des_pos_ = Eigen::VectorXd::Zero(num_joints_);
+  joint_des_vel_ = Eigen::VectorXd::Zero(num_joints_);
+  joint_des_acc_ = Eigen::VectorXd::Zero(num_joints_);
   I_ = Eigen::MatrixXd(num_joints_, num_joints_);
   I_.setIdentity();
 
@@ -75,34 +78,25 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   BaseController::read_state_from_hardware(joint_state_);
   BaseForceController::read_state_from_hardware(ft_values_);
 
-
-  // get joint positions
-  vec_to_eigen(joint_state_.positions, joint_pos_);
-  vec_to_eigen(joint_state_.velocities, joint_vel_);
-
+  // get reference joint state
+  vec_to_eigen(joint_reference_.positions, joint_ref_pos_);
+  // get current joint state
+  vec_to_eigen(joint_state_.positions, joint_cur_pos_);
+  vec_to_eigen(joint_state_.velocities, joint_cur_vel_);
+  // get command joint state
+  vec_to_eigen(joint_command_.positions, joint_des_pos_);
+  vec_to_eigen(joint_command_.velocities, joint_des_vel_);
+  vec_to_eigen(joint_command_.accelerations, joint_des_acc_);
 
   // process wrench measurements
-  process_wrench_measurements(joint_pos_, ft_values_);
-  wrench_publisher_->lock();
-  wrench_publisher_->msg_.header.frame_id = base_controller_parameters_.kinematics.base_link;
-  wrench_publisher_->msg_.header.stamp = get_node()->now();
-  wrench_publisher_->msg_.wrench.force.x = base_wrench_(0);
-  wrench_publisher_->msg_.wrench.force.y = base_wrench_(1);
-  wrench_publisher_->msg_.wrench.force.z = base_wrench_(2);
-  wrench_publisher_->msg_.wrench.torque.x = base_wrench_(3);
-  wrench_publisher_->msg_.wrench.torque.y = base_wrench_(4);
-  wrench_publisher_->msg_.wrench.torque.z = base_wrench_(5);
-  wrench_publisher_->unlockAndPublish();
-
-
+  process_wrench_measurements(joint_cur_pos_, ft_values_);
 
   // get target pose
   Eigen::Isometry3d target_pose;
-  if (!using_joint_reference_interface_)
-    tf2::fromMsg(pose_reference_, target_pose);
+  if (!using_joint_reference_interface_) {
+    tf2::fromMsg(pose_reference_.pose, target_pose);
   } 
   else {
-    vec_to_eigen(joint_state_.positions, joint_ref_pos_);
     ik_solver_->calculate_link_transform(
       joint_ref_pos_, 
       base_controller_parameters_.kinematics.base_link, 
@@ -114,7 +108,7 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   // get current pose
   Eigen::Isometry3d current_pose;
   ik_solver_->calculate_link_transform(
-    joint_pos_, 
+    joint_cur_pos_, 
     base_controller_parameters_.kinematics.base_link, 
     base_controller_parameters_.kinematics.end_effector_link, 
     current_pose
@@ -122,20 +116,19 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
 
   // get jacobian
   Eigen::Matrix<double, 6, Eigen::Dynamic> J;
-  ik_solver_->calculate_jacobian(joint_pos_, base_controller_parameters_.kinematics.end_effector_link, J);
+  ik_solver_->calculate_jacobian(joint_cur_pos_, base_controller_parameters_.kinematics.end_effector_link, J);
 
   // get current twist
-  Eigen::Matrix<double, 6, 1> current_twist = J * joint_vel_;
+  Eigen::Matrix<double, 6, 1> current_twist = J * joint_des_vel_; // TODO: use joint_des_vel_ or joint_cur_vel_?
 
   // get control frame
   Eigen::Isometry3d control_frame;
   ik_solver_->calculate_link_transform(
-    joint_pos_, 
+    joint_cur_pos_, 
     base_controller_parameters_.kinematics.base_link, 
     impedance_pose_controller_parameters_.control.frame.id, 
     control_frame
   );
-
 
   // create stiffness and damping matrices
   Eigen::Matrix<double, 6, 6> stiffness_matrix;
@@ -162,36 +155,29 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   // base_wrench.block<3, 1>(0, 0) = control_frame.rotation() * control_wrench.block<3, 1>(0, 0);
   // base_wrench.block<3, 1>(3, 0) = control_frame.rotation() * control_wrench.block<3, 1>(3, 0);
 
-  // base_wrench.setZero();
   // Compute admittance control law in the base frame: F = M*x_ddot + D*x_dot + K*x
-  Eigen::Matrix<double, 6, 1> task_acc =
+  Eigen::Matrix<double, 6, 1> task_des_acc = 
     mass_inv_.cwiseProduct(base_wrench_ - damping_matrix * current_twist - stiffness_matrix * pose_error);
-
 
   // damped inverse
   Eigen::Matrix<double, Eigen::Dynamic, 6> J_inverse =
      (J.transpose() * J + lms_damping_ * I_).inverse() * J.transpose();
-  Eigen::VectorXd joint_acc = J_inverse * task_acc;
+  joint_des_acc_ = J_inverse * task_des_acc;
 
+  // add joint damping 
+  joint_des_acc_ -= joint_damping_ * joint_des_vel_;  // TODO: use joint_des_vel_ or joint_cur_vel_?
 
-  // add damping if cartesian velocity falls below threshold
-  for (int64_t i = 0; i < joint_acc.size(); ++i)
-  {
-    joint_acc[i] -=
-      joint_damping_ * joint_vel_[i];
-  }
-
+  // integrate
+  joint_des_vel_ += period.seconds() * joint_des_acc_;
+  joint_des_pos_ += period.seconds() * joint_des_vel_;
 
   // write commands
   for (size_t i = 0; i < num_joints_; ++i)
   {
-    joint_command_.accelerations[i] = joint_acc[i];
-    joint_command_.velocities[i] = joint_vel_[i] + period.seconds() * joint_command_.accelerations[i];
-    joint_command_.positions[i] = joint_pos_[i] + period.seconds() * joint_command_.velocities[i];
-
+    joint_command_.accelerations[i] = joint_des_acc_[i];
+    joint_command_.velocities[i] = joint_des_vel_[i];
+    joint_command_.positions[i] = joint_des_pos_[i];
   }
-
-
 
   BaseController::write_state_to_hardware(joint_command_);
   return controller_interface::return_type::OK;

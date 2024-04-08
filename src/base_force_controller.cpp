@@ -142,6 +142,8 @@ void BaseForceController::process_wrench_measurements(
   const geometry_msgs::msg::Wrench & measured_wrench
 )
 {
+  bool zero_wrench_flag = zero_wrench_flag_.load();
+
   Eigen::Isometry3d world_base_transform;
   ik_solver_->calculate_link_transform(
     joint_pos, 
@@ -175,33 +177,47 @@ void BaseForceController::process_wrench_measurements(
   sensor_wrench(4, 0) = measured_wrench.torque.y;
   sensor_wrench(5, 0) = measured_wrench.torque.z;
 
+  // if (zero_wrench_flag) {
+  //   zero_wrench_offset_1_ = world_wrench;
+  // }
+  // world_wrench -= zero_wrench_offset_1_;
+
   // transform wrench to world frame
   Eigen::Matrix<double, 6, 1> world_wrench;
   world_wrench.block<3, 1>(0, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(0, 0);
   world_wrench.block<3, 1>(3, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(3, 0);
 
+  if (zero_wrench_flag) {
+    zero_wrench_offset_ = world_wrench;
+  }
+  world_wrench -= zero_wrench_offset_;
+
   // // apply gravity compensation
   // world_wrench(2, 0) -= end_effector_weight_[2];
-  // world_wrench.block<3, 1>(3, 0) -= (world_cog_transform.rotation() * cog_pos_).cross(end_effector_weight_);
+  world_wrench.block<3, 1>(3, 0) -= (world_cog_transform.rotation() * cog_pos_).cross(end_effector_weight_);
 
-  Eigen::Matrix<double, 6, 1> new_base_wrench = world_wrench;  //tmp
-  // new_base_wrench.block<3, 1>(0, 0) =
-  //   world_base_transform.rotation().transpose() * world_wrench.block<3, 1>(0, 0);
-  // new_base_wrench.block<3, 1>(3, 0) =
-  //   world_base_transform.rotation().transpose() * world_wrench.block<3, 1>(3, 0);
-
-
-  // apply zero wrench offset if flag is set
-  // if (zero_wrench_flag_.load())
-  // {
-  //   zero_wrench_offset_ = new_base_wrench;
-  //   zero_wrench_flag_.store(false);
-  // }
-  // // zero out the wrench
-  // new_base_wrench -= zero_wrench_offset_;
+  Eigen::Matrix<double, 6, 1> new_base_wrench;
+  new_base_wrench.block<3, 1>(0, 0) =
+    world_base_transform.rotation().transpose() * world_wrench.block<3, 1>(0, 0);
+  new_base_wrench.block<3, 1>(3, 0) =
+    world_base_transform.rotation().transpose() * world_wrench.block<3, 1>(3, 0);
 
   double alpha = base_force_controller_parameters_.ft_sensor.filter_coefficient;
   base_wrench_ = alpha * new_base_wrench + (1 - alpha) * base_wrench_;
+
+  wrench_publisher_->lock();
+  wrench_publisher_->msg_.header.frame_id = base_controller_parameters_.kinematics.base_link;
+  wrench_publisher_->msg_.header.stamp = get_node()->now();
+  wrench_publisher_->msg_.wrench.force.x = base_wrench_(0);
+  wrench_publisher_->msg_.wrench.force.y = base_wrench_(1);
+  wrench_publisher_->msg_.wrench.force.z = base_wrench_(2);
+  wrench_publisher_->msg_.wrench.torque.x = base_wrench_(3);
+  wrench_publisher_->msg_.wrench.torque.y = base_wrench_(4);
+  wrench_publisher_->msg_.wrench.torque.z = base_wrench_(5);
+  wrench_publisher_->unlockAndPublish();
+
+
+  zero_wrench_flag_.store(false);
 }
 
 void BaseForceController::read_state_from_hardware(
