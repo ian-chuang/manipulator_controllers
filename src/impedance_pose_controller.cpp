@@ -147,25 +147,25 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   // calculate spatial error
   Eigen::Matrix<double, 6, 1> pose_error;
   pose_error.block<3, 1>(0, 0) =
-    target_pose.translation() - current_pose.translation();
-  auto R = target_pose.rotation() * current_pose.rotation().transpose();
+    current_pose.translation() - target_pose.translation();
+  auto R = current_pose.rotation() * target_pose.rotation().transpose();
   auto angle_axis = Eigen::AngleAxisd(R);
   pose_error.block<3, 1>(3, 0) = angle_axis.angle() * angle_axis.axis();
 
 
   // zero out any forces in the control frame
-  Eigen::Matrix<double, 6, 1> control_wrench;
-  Eigen::Matrix<double, 6, 1> base_wrench = base_wrench_;
-  control_wrench.block<3, 1>(0, 0) = control_frame.rotation().transpose() * base_wrench.block<3, 1>(0, 0);
-  control_wrench.block<3, 1>(3, 0) = control_frame.rotation().transpose() * base_wrench.block<3, 1>(3, 0);
-  control_wrench = control_wrench.cwiseProduct(selected_axes_);
-  base_wrench.block<3, 1>(0, 0) = control_frame.rotation() * control_wrench.block<3, 1>(0, 0);
-  base_wrench.block<3, 1>(3, 0) = control_frame.rotation() * control_wrench.block<3, 1>(3, 0);
+  // Eigen::Matrix<double, 6, 1> control_wrench;
+  // Eigen::Matrix<double, 6, 1> base_wrench = base_wrench_;
+  // control_wrench.block<3, 1>(0, 0) = control_frame.rotation().transpose() * base_wrench.block<3, 1>(0, 0);
+  // control_wrench.block<3, 1>(3, 0) = control_frame.rotation().transpose() * base_wrench.block<3, 1>(3, 0);
+  // control_wrench = control_wrench.cwiseProduct(selected_axes_);
+  // base_wrench.block<3, 1>(0, 0) = control_frame.rotation() * control_wrench.block<3, 1>(0, 0);
+  // base_wrench.block<3, 1>(3, 0) = control_frame.rotation() * control_wrench.block<3, 1>(3, 0);
 
-
+  // base_wrench.setZero();
   // Compute admittance control law in the base frame: F = M*x_ddot + D*x_dot + K*x
   Eigen::Matrix<double, 6, 1> task_acc =
-    mass_inv_.cwiseProduct(base_wrench + damping_matrix * current_twist + stiffness_matrix * pose_error);
+    mass_inv_.cwiseProduct(base_wrench_ - damping_matrix * current_twist - stiffness_matrix * pose_error);
 
 
   // damped inverse

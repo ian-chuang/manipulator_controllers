@@ -166,9 +166,6 @@ void BaseForceController::process_wrench_measurements(
     world_cog_transform
   );
 
-  //std::cout << "world_base_transform: " << world_base_transform.matrix() << std::endl;
-  //std::cout << "world_sensor_transform: " << world_sensor_transform.matrix() << std::endl;
-  //std::cout << "world_cog_transform: " << world_cog_transform.matrix() << std::endl;
 
   Eigen::Matrix<double, 6, 1> sensor_wrench;
   sensor_wrench(0, 0) = measured_wrench.force.x;
@@ -183,29 +180,25 @@ void BaseForceController::process_wrench_measurements(
   world_wrench.block<3, 1>(0, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(0, 0);
   world_wrench.block<3, 1>(3, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(3, 0);
 
-  // apply gravity compensation
-  world_wrench(2, 0) -= end_effector_weight_[2];
-  world_wrench.block<3, 1>(3, 0) -= (world_cog_transform.rotation() * cog_pos_).cross(end_effector_weight_);
+  // // apply gravity compensation
+  // world_wrench(2, 0) -= end_effector_weight_[2];
+  // world_wrench.block<3, 1>(3, 0) -= (world_cog_transform.rotation() * cog_pos_).cross(end_effector_weight_);
 
-  //std::cout << "cog pos: " << cog_pos_ << std::endl;
-  //std::cout << "end effector weight: " << end_effector_weight_ << std::endl;
-  //std::cout << "world_wrench after zeroing and gravity compensation: " << world_wrench << std::endl;
+  Eigen::Matrix<double, 6, 1> new_base_wrench = world_wrench;  //tmp
+  // new_base_wrench.block<3, 1>(0, 0) =
+  //   world_base_transform.rotation().transpose() * world_wrench.block<3, 1>(0, 0);
+  // new_base_wrench.block<3, 1>(3, 0) =
+  //   world_base_transform.rotation().transpose() * world_wrench.block<3, 1>(3, 0);
 
-  // transform wrench from world to base frame
-  Eigen::Matrix<double, 6, 1> new_base_wrench;
-  new_base_wrench.block<3, 1>(0, 0) = world_base_transform.rotation().transpose() * world_wrench.block<3, 1>(0, 0);
-  new_base_wrench.block<3, 1>(3, 0) = world_base_transform.rotation().transpose() * world_wrench.block<3, 1>(3, 0);
 
   // apply zero wrench offset if flag is set
-  if (zero_wrench_flag_.load())
-  {
-    zero_wrench_offset_ = new_base_wrench;
-    zero_wrench_flag_.store(false);
-  }
-  // zero out the wrench
-  new_base_wrench -= zero_wrench_offset_;
-
-  // apply smoothing filter
+  // if (zero_wrench_flag_.load())
+  // {
+  //   zero_wrench_offset_ = new_base_wrench;
+  //   zero_wrench_flag_.store(false);
+  // }
+  // // zero out the wrench
+  // new_base_wrench -= zero_wrench_offset_;
 
   double alpha = base_force_controller_parameters_.ft_sensor.filter_coefficient;
   base_wrench_ = alpha * new_base_wrench + (1 - alpha) * base_wrench_;
