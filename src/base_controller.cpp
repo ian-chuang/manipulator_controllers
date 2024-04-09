@@ -609,17 +609,5 @@ void BaseController::read_state_reference_interfaces(
   last_joint_reference_.velocities = state_reference.velocities;
 }
 
-template <typename T1, typename T2>
-void BaseController::vec_to_eigen(const std::vector<T1> & data, T2 & matrix)
-{
-  for (auto col = 0; col < matrix.cols(); col++)
-  {
-    for (auto row = 0; row < matrix.rows(); row++)
-    {
-      matrix(row, col) = data[row + col * matrix.rows()];
-    }
-  }
-}
-
 }  // namespace manipulator_controllers
 

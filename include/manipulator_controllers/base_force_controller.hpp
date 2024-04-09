@@ -14,6 +14,7 @@
 #include "geometry_msgs/msg/wrench_stamped.hpp"
 #include "std_srvs/srv/trigger.hpp"
 #include "realtime_tools/realtime_publisher.h"
+#include "manipulator_controllers/utils.hpp"
 
 namespace manipulator_controllers
 {
@@ -39,18 +40,6 @@ protected:
   void process_wrench_measurements(
     const Eigen::VectorXd & joint_pos,
     const geometry_msgs::msg::Wrench & measured_wrench);
-
-  template <typename T1, typename T2>
-  void vec_to_eigen(const std::vector<T1> & data, T2 & matrix) 
-  {
-    for (auto col = 0; col < matrix.cols(); col++)
-    {
-      for (auto row = 0; row < matrix.rows(); row++)
-      {
-        matrix(row, col) = data[row + col * matrix.rows()];
-      }
-    }
-  }
 
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr zero_wrench_service_;
   std::atomic<bool> zero_wrench_flag_;

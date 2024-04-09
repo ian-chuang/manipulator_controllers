@@ -1,4 +1,10 @@
 base_force_controller:
+  compliance:
+    frame:
+      id: {
+        type: string,
+        description: "Specifies the frame/link name of the force torque sensor."
+      }
   ft_sensor:
     name: {
       type: string,

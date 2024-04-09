@@ -10,6 +10,7 @@
 #include "impedance_pose_controller_parameters.hpp"
 
 #include "manipulator_controllers/base_force_controller.hpp"
+#include "manipulator_controllers/utils.hpp"
 
 namespace manipulator_controllers
 {
@@ -46,20 +47,13 @@ protected:
   Eigen::VectorXd joint_des_pos_;
   Eigen::VectorXd joint_des_vel_;
   Eigen::VectorXd joint_des_acc_;
+  Eigen::VectorXd nullspace_joint_pos_;
+  Eigen::VectorXd nullspace_stiffness_;
+  Eigen::VectorXd nullspace_damping_ratio_;
+  Eigen::VectorXd nullspace_damping_;
   
   Eigen::MatrixXd I_;
 
-  template <typename T1, typename T2>
-  void vec_to_eigen(const std::vector<T1> & data, T2 & matrix)
-  {
-    for (auto col = 0; col < matrix.cols(); col++)
-    {
-      for (auto row = 0; row < matrix.rows(); row++)
-      {
-        matrix(row, col) = data[row + col * matrix.rows()];
-      }
-    }
-  }
 
 };
 

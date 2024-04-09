@@ -168,6 +168,22 @@ void BaseForceController::process_wrench_measurements(
     world_cog_transform
   );
 
+  Eigen::Isometry3d base_compliance_transform;
+  ik_solver_->calculate_link_transform(
+    joint_pos, 
+    base_controller_parameters_.kinematics.base_link,
+    base_force_controller_parameters_.compliance.frame.id,
+    base_compliance_transform
+  );
+
+  Eigen::Isometry3d compliance_sensor_transform;
+  ik_solver_->calculate_link_transform(
+    joint_pos, 
+    base_force_controller_parameters_.compliance.frame.id,
+    base_force_controller_parameters_.ft_sensor.frame.id,
+    compliance_sensor_transform
+  );
+
 
   Eigen::Matrix<double, 6, 1> sensor_wrench;
   sensor_wrench(0, 0) = measured_wrench.force.x;
@@ -177,30 +193,40 @@ void BaseForceController::process_wrench_measurements(
   sensor_wrench(4, 0) = measured_wrench.torque.y;
   sensor_wrench(5, 0) = measured_wrench.torque.z;
 
-  // if (zero_wrench_flag) {
-  //   zero_wrench_offset_1_ = world_wrench;
-  // }
-  // world_wrench -= zero_wrench_offset_1_;
-
   // transform wrench to world frame
   Eigen::Matrix<double, 6, 1> world_wrench;
   world_wrench.block<3, 1>(0, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(0, 0);
   world_wrench.block<3, 1>(3, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(3, 0);
+
+  
+
+  // // apply gravity compensation
+  // world_wrench(2, 0) -= end_effector_weight_[2];
+  world_wrench.block<3, 1>(3, 0) -= (world_cog_transform.rotation() * cog_pos_).cross(end_effector_weight_);
+
+  
 
   if (zero_wrench_flag) {
     zero_wrench_offset_ = world_wrench;
   }
   world_wrench -= zero_wrench_offset_;
 
-  // // apply gravity compensation
-  // world_wrench(2, 0) -= end_effector_weight_[2];
-  world_wrench.block<3, 1>(3, 0) -= (world_cog_transform.rotation() * cog_pos_).cross(end_effector_weight_);
 
+  // transform back to sensor frame
+  sensor_wrench.block<3, 1>(0, 0) = world_sensor_transform.rotation().transpose() * world_wrench.block<3, 1>(0, 0);
+  sensor_wrench.block<3, 1>(3, 0) = world_sensor_transform.rotation().transpose() * world_wrench.block<3, 1>(3, 0);
+
+  Eigen::Matrix<double, 6, 1> compliance_wrench;
+  compliance_wrench.block<3, 1>(0, 0) = compliance_sensor_transform.rotation() * sensor_wrench.block<3, 1>(0, 0);
+  compliance_wrench.block<3, 1>(3, 0) = compliance_sensor_transform.rotation() * sensor_wrench.block<3, 1>(3, 0) 
+    + compliance_sensor_transform.translation().cross(compliance_wrench.block<3, 1>(0, 0));
+
+  // transform to base frame
   Eigen::Matrix<double, 6, 1> new_base_wrench;
   new_base_wrench.block<3, 1>(0, 0) =
-    world_base_transform.rotation().transpose() * world_wrench.block<3, 1>(0, 0);
+    base_compliance_transform.rotation() * compliance_wrench.block<3, 1>(0, 0);
   new_base_wrench.block<3, 1>(3, 0) =
-    world_base_transform.rotation().transpose() * world_wrench.block<3, 1>(3, 0);
+    base_compliance_transform.rotation() * compliance_wrench.block<3, 1>(3, 0);
 
   double alpha = base_force_controller_parameters_.ft_sensor.filter_coefficient;
   base_wrench_ = alpha * new_base_wrench + (1 - alpha) * base_wrench_;
