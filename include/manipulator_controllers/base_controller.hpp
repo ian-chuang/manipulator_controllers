@@ -12,9 +12,10 @@
 #include "controller_interface/helpers.hpp"
 #include "controller_interface/controller_interface.hpp"
 #include "controller_interface/chainable_controller_interface.hpp"
+#include "trajectory_msgs/msg/joint_trajectory.hpp"
 #include "geometry_msgs/msg/pose_stamped.hpp"
-// #include "geometry_msgs/msg/transform_stamped.hpp"
-// #include "geometry_msgs/msg/wrench_stamped.hpp"
+#include "geometry_msgs/msg/twist_stamped.hpp"
+#include "geometry_msgs/msg/wrench_stamped.hpp"
 #include "hardware_interface/types/hardware_interface_type_values.hpp"
 #include "pluginlib/class_loader.hpp"
 #include "rclcpp/duration.hpp"
@@ -23,14 +24,8 @@
 #include "rclcpp_lifecycle/state.hpp"
 #include "realtime_tools/realtime_buffer.h"
 #include "tf2_eigen/tf2_eigen.hpp"
-// #include "realtime_tools/realtime_publisher.h"
-// #include "semantic_components/force_torque_sensor.hpp"
-// #include "kinematics_interface/kinematics_interface.hpp"
-// #include "pluginlib/class_loader.hpp"
 #include "manipulator_controllers/ik_solver.hpp"
 #include "manipulator_controllers/utils.hpp"
-
-#include "trajectory_msgs/msg/joint_trajectory.hpp"
 
 namespace manipulator_controllers
 {
@@ -117,42 +112,47 @@ protected:
   std::vector<std::reference_wrapper<double>> position_reference_;
   std::vector<std::reference_wrapper<double>> velocity_reference_;
 
-  // force torque sensor
-  // std::unique_ptr<semantic_components::ForceTorqueSensor> force_torque_sensor_;
-
   // ROS subscribers
   rclcpp::Subscription<trajectory_msgs::msg::JointTrajectoryPoint>::SharedPtr
     input_joint_command_subscriber_;
   rclcpp::Subscription<geometry_msgs::msg::PoseStamped>::SharedPtr input_pose_command_subscriber_;
-  // rclcpp::Publisher<control_msgs::msg::AdmittanceControllerState>::SharedPtr s_publisher_;
-
-  // base parameters
-  std::shared_ptr<base_controller::ParamListener> base_controller_parameter_handler_;
-  base_controller::Params base_controller_parameters_;
-
-  // ROS messages
-  std::shared_ptr<trajectory_msgs::msg::JointTrajectoryPoint> joint_command_msg_;
-  std::shared_ptr<geometry_msgs::msg::PoseStamped> pose_command_msg_;
+  rclcpp::Subscription<geometry_msgs::msg::TwistStamped>::SharedPtr input_twist_command_subscriber_;
+  rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr input_wrench_command_subscriber_;
 
   // real-time buffer
   realtime_tools::RealtimeBuffer<std::shared_ptr<trajectory_msgs::msg::JointTrajectoryPoint>>
     input_joint_command_;
   realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::PoseStamped>> input_pose_command_;
-  // std::unique_ptr<realtime_tools::RealtimePublisher<ControllerStateMsg>> state_publisher_;
+  realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::TwistStamped>> input_twist_command_;
+  realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::WrenchStamped>> input_wrench_command_;
+
+  // ROS messages
+  std::shared_ptr<trajectory_msgs::msg::JointTrajectoryPoint> joint_command_msg_;
+  std::shared_ptr<geometry_msgs::msg::PoseStamped> pose_command_msg_;
+  std::shared_ptr<geometry_msgs::msg::TwistStamped> twist_command_msg_;
+  std::shared_ptr<geometry_msgs::msg::WrenchStamped> wrench_command_msg_;
+
+  // base parameters
+  std::shared_ptr<base_controller::ParamListener> base_controller_parameter_handler_;
+  base_controller::Params base_controller_parameters_;
 
   trajectory_msgs::msg::JointTrajectoryPoint last_joint_command_;
   trajectory_msgs::msg::JointTrajectoryPoint last_joint_reference_;
+  geometry_msgs::msg::PoseStamped last_pose_reference_;
+  geometry_msgs::msg::TwistStamped last_twist_reference_;
+  geometry_msgs::msg::WrenchStamped last_wrench_reference_;
 
   // control loop data
-  // reference_: reference value read by the controller
-  // joint_state_: current joint readings from the hardware
-  // reference_admittance_: reference value used by the controller after the admittance values are
-  // applied ft_values_: values read from the force torque sensor
   trajectory_msgs::msg::JointTrajectoryPoint joint_reference_, joint_state_, joint_command_;
   geometry_msgs::msg::PoseStamped pose_reference_;
-  // geometry_msgs::msg::Wrench ft_values_;
-
-  bool using_joint_reference_interface_;
+  geometry_msgs::msg::TwistStamped twist_reference_;
+  geometry_msgs::msg::WrenchStamped wrench_reference_;
+  
+  // reference state
+  bool using_joint_reference_;
+  bool using_pose_reference_;
+  bool using_twist_reference_;
+  bool using_wrench_reference_;
 
   // Kinematics interface plugin loader
   std::unique_ptr<manipulator_controllers::IKSolver> ik_solver_;
@@ -176,9 +176,6 @@ protected:
    */
   void write_state_to_hardware(const trajectory_msgs::msg::JointTrajectoryPoint & state_command);
 
-  
-
-  
 };
 
 }  // namespace manipulator_controllers

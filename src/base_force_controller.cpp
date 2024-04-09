@@ -54,15 +54,15 @@ controller_interface::CallbackReturn BaseForceController::on_configure(
   force_torque_sensor_ = std::make_unique<semantic_components::ForceTorqueSensor>(
     semantic_components::ForceTorqueSensor(base_force_controller_parameters_.ft_sensor.name));
 
+  // initialize vals
   zero_wrench_flag_.store(true);
   zero_wrench_offset_.setZero();
   base_wrench_.setZero();
   end_effector_weight_.setZero();
-  end_effector_weight_[2] = -base_force_controller_parameters_.gravity_compensation.CoG.force;
-  vec_to_eigen(base_force_controller_parameters_.gravity_compensation.CoG.pos, cog_pos_);
+  end_effector_weight_[2] = -base_force_controller_parameters_.ft_sensor.gravity_compensation.CoG.force;
+  vec_to_eigen(base_force_controller_parameters_.ft_sensor.gravity_compensation.CoG.pos, cog_pos_);
 
-
-  // setup subscribers and publishers
+  // zero wrench service
   auto zero_wrench_callback =
     [this](
       const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
@@ -97,14 +97,11 @@ controller_interface::CallbackReturn BaseForceController::on_configure(
     get_node()->create_service<std_srvs::srv::Trigger>(
       "~/zero_ft_sensor", zero_wrench_callback);
 
+  // wrench publisher
   w_publisher_ = get_node()->create_publisher<geometry_msgs::msg::WrenchStamped>(
     "~/ft_sensor", rclcpp::SystemDefaultsQoS());
   wrench_publisher_ =
     std::make_unique<realtime_tools::RealtimePublisher<geometry_msgs::msg::WrenchStamped>>(w_publisher_);
-  // Initialize state message
-  //wrench_publisher_->lock();
-  //wrench_publisher_->msg_ = admittance_->get_controller_state();
-  //wrench_publisher_->unlock();
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -122,7 +119,15 @@ controller_interface::CallbackReturn BaseForceController::on_activate(
   // activate force_torque_sensor
   force_torque_sensor_->assign_loaned_state_interfaces(state_interfaces_);
 
-  read_state_from_hardware(ft_values_);
+  read_state_from_hardware(joint_state_, ft_values_);
+
+  // initialize vals
+  zero_wrench_flag_.store(true);
+  zero_wrench_offset_.setZero();
+  base_wrench_.setZero();
+  end_effector_weight_.setZero();
+  end_effector_weight_[2] = -base_force_controller_parameters_.ft_sensor.gravity_compensation.CoG.force;
+  vec_to_eigen(base_force_controller_parameters_.ft_sensor.gravity_compensation.CoG.pos, cog_pos_);
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -138,53 +143,54 @@ controller_interface::CallbackReturn BaseForceController::on_deactivate(
 }
 
 void BaseForceController::process_wrench_measurements(
-  const Eigen::VectorXd & joint_pos,
-  const geometry_msgs::msg::Wrench & measured_wrench
+  const trajectory_msgs::msg::JointTrajectoryPoint & joint_state,
+  const geometry_msgs::msg::Wrench & measured_wrench,
+  geometry_msgs::msg::Wrench & processed_wrench
 )
 {
-  bool zero_wrench_flag = zero_wrench_flag_.load();
+  // get joint positions
+  Eigen::VectorXd joint_pos = Eigen::VectorXd::Zero(num_joints_);
+  vec_to_eigen(joint_state.positions, joint_pos);
 
-  Eigen::Isometry3d world_base_transform;
-  ik_solver_->calculate_link_transform(
-    joint_pos, 
-    base_force_controller_parameters_.fixed_world_frame.frame.id,
-    base_controller_parameters_.kinematics.base_link,
-    world_base_transform
-  );
-
+  // get transforms
+  bool success = true;
   Eigen::Isometry3d world_sensor_transform;
-  ik_solver_->calculate_link_transform(
+  success &= ik_solver_->calculate_link_transform(
     joint_pos, 
-    base_force_controller_parameters_.fixed_world_frame.frame.id,
-    base_force_controller_parameters_.ft_sensor.frame.id,
+    base_force_controller_parameters_.ft_sensor.gravity_compensation.gravity_frame,
+    base_force_controller_parameters_.ft_sensor.ft_frame,
     world_sensor_transform
   );
-
   Eigen::Isometry3d world_cog_transform;
-  ik_solver_->calculate_link_transform(
+  success &= ik_solver_->calculate_link_transform(
     joint_pos, 
-    base_force_controller_parameters_.fixed_world_frame.frame.id,
-    base_force_controller_parameters_.gravity_compensation.frame.id,
+    base_force_controller_parameters_.ft_sensor.gravity_compensation.gravity_frame,
+    base_force_controller_parameters_.ft_sensor.gravity_compensation.CoG.frame,
     world_cog_transform
   );
-
   Eigen::Isometry3d base_compliance_transform;
-  ik_solver_->calculate_link_transform(
+  success &= ik_solver_->calculate_link_transform(
     joint_pos, 
-    base_controller_parameters_.kinematics.base_link,
-    base_force_controller_parameters_.compliance.frame.id,
+    base_controller_parameters_.kinematics.robot_base,
+    base_force_controller_parameters_.ft_sensor.new_ft_frame,
     base_compliance_transform
   );
-
   Eigen::Isometry3d compliance_sensor_transform;
-  ik_solver_->calculate_link_transform(
+  success &= ik_solver_->calculate_link_transform(
     joint_pos, 
-    base_force_controller_parameters_.compliance.frame.id,
-    base_force_controller_parameters_.ft_sensor.frame.id,
+    base_force_controller_parameters_.ft_sensor.new_ft_frame,
+    base_force_controller_parameters_.ft_sensor.ft_frame,
     compliance_sensor_transform
   );
+  if (!success)
+  {
+    RCLCPP_ERROR(
+      get_node()->get_logger(), "Failed to calculate link transforms in process_wrench_measurements, setting wrench to zero.");
+    processed_wrench = geometry_msgs::msg::Wrench();
+    return;
+  }
 
-
+  // create wrench vector
   Eigen::Matrix<double, 6, 1> sensor_wrench;
   sensor_wrench(0, 0) = measured_wrench.force.x;
   sensor_wrench(1, 0) = measured_wrench.force.y;
@@ -198,24 +204,22 @@ void BaseForceController::process_wrench_measurements(
   world_wrench.block<3, 1>(0, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(0, 0);
   world_wrench.block<3, 1>(3, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(3, 0);
 
-  
-
-  // // apply gravity compensation
-  // world_wrench(2, 0) -= end_effector_weight_[2];
+  // apply gravity compensation
+  world_wrench(2, 0) -= end_effector_weight_[2];
   world_wrench.block<3, 1>(3, 0) -= (world_cog_transform.rotation() * cog_pos_).cross(end_effector_weight_);
 
-  
-
-  if (zero_wrench_flag) {
+  // zero wrench if flag is set
+  if (zero_wrench_flag_.load()) {
     zero_wrench_offset_ = world_wrench;
+    zero_wrench_flag_.store(false);
   }
   world_wrench -= zero_wrench_offset_;
-
 
   // transform back to sensor frame
   sensor_wrench.block<3, 1>(0, 0) = world_sensor_transform.rotation().transpose() * world_wrench.block<3, 1>(0, 0);
   sensor_wrench.block<3, 1>(3, 0) = world_sensor_transform.rotation().transpose() * world_wrench.block<3, 1>(3, 0);
 
+  // transform to compliance frame (factor in compliance frame translation)
   Eigen::Matrix<double, 6, 1> compliance_wrench;
   compliance_wrench.block<3, 1>(0, 0) = compliance_sensor_transform.rotation() * sensor_wrench.block<3, 1>(0, 0);
   compliance_wrench.block<3, 1>(3, 0) = compliance_sensor_transform.rotation() * sensor_wrench.block<3, 1>(3, 0) 
@@ -228,37 +232,44 @@ void BaseForceController::process_wrench_measurements(
   new_base_wrench.block<3, 1>(3, 0) =
     base_compliance_transform.rotation() * compliance_wrench.block<3, 1>(3, 0);
 
+  // filter wrench
   double alpha = base_force_controller_parameters_.ft_sensor.filter_coefficient;
   base_wrench_ = alpha * new_base_wrench + (1 - alpha) * base_wrench_;
 
+  // set output
+  processed_wrench.force.x = base_wrench_(0);
+  processed_wrench.force.y = base_wrench_(1);
+  processed_wrench.force.z = base_wrench_(2);
+  processed_wrench.torque.x = base_wrench_(3);
+  processed_wrench.torque.y = base_wrench_(4);
+  processed_wrench.torque.z = base_wrench_(5);
+
+  // publish wrench
   wrench_publisher_->lock();
-  wrench_publisher_->msg_.header.frame_id = base_controller_parameters_.kinematics.base_link;
+  wrench_publisher_->msg_.header.frame_id = base_controller_parameters_.kinematics.robot_base;
   wrench_publisher_->msg_.header.stamp = get_node()->now();
-  wrench_publisher_->msg_.wrench.force.x = base_wrench_(0);
-  wrench_publisher_->msg_.wrench.force.y = base_wrench_(1);
-  wrench_publisher_->msg_.wrench.force.z = base_wrench_(2);
-  wrench_publisher_->msg_.wrench.torque.x = base_wrench_(3);
-  wrench_publisher_->msg_.wrench.torque.y = base_wrench_(4);
-  wrench_publisher_->msg_.wrench.torque.z = base_wrench_(5);
+  wrench_publisher_->msg_.wrench = processed_wrench;
   wrench_publisher_->unlockAndPublish();
-
-
-  zero_wrench_flag_.store(false);
 }
 
 void BaseForceController::read_state_from_hardware(
-  geometry_msgs::msg::Wrench & ft_values
+  trajectory_msgs::msg::JointTrajectoryPoint & joint_state,
+  geometry_msgs::msg::Wrench & output_wrench
   )
 {
+  geometry_msgs::msg::Wrench wrench;
   // if any ft_values are nan, assume values are zero
-  force_torque_sensor_->get_values_as_message(ft_values);
+  force_torque_sensor_->get_values_as_message(wrench);
   if (
-    std::isnan(ft_values.force.x) || std::isnan(ft_values.force.y) ||
-    std::isnan(ft_values.force.z) || std::isnan(ft_values.torque.x) ||
-    std::isnan(ft_values.torque.y) || std::isnan(ft_values.torque.z))
+    std::isnan(wrench.force.x) || std::isnan(wrench.force.y) ||
+    std::isnan(wrench.force.z) || std::isnan(wrench.torque.x) ||
+    std::isnan(wrench.torque.y) || std::isnan(wrench.torque.z))
   {
-    ft_values = geometry_msgs::msg::Wrench();
+    wrench = geometry_msgs::msg::Wrench();
   }
+
+  // process wrench measurements
+  process_wrench_measurements(joint_state, wrench, output_wrench);
 }
 
 

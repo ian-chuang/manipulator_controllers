@@ -37,14 +37,12 @@ public:
 
 protected:
 
-  void process_wrench_measurements(
-    const Eigen::VectorXd & joint_pos,
-    const geometry_msgs::msg::Wrench & measured_wrench);
-
+  // zero wrench service
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr zero_wrench_service_;
   std::atomic<bool> zero_wrench_flag_;
   Eigen::Matrix<double, 6, 1> zero_wrench_offset_;
 
+  // wrench publisher
   rclcpp::Publisher<geometry_msgs::msg::WrenchStamped>::SharedPtr w_publisher_;
   std::unique_ptr<realtime_tools::RealtimePublisher<geometry_msgs::msg::WrenchStamped>> wrench_publisher_;
 
@@ -72,7 +70,14 @@ protected:
    * ft_values
    */
   void read_state_from_hardware(
+    trajectory_msgs::msg::JointTrajectoryPoint & joint_state,
     geometry_msgs::msg::Wrench & ft_values
+  );
+
+  void process_wrench_measurements(
+    const trajectory_msgs::msg::JointTrajectoryPoint & joint_state,
+    const geometry_msgs::msg::Wrench & measured_wrench,
+    geometry_msgs::msg::Wrench & processed_wrench
   );
   
 };

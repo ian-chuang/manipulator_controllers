@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "geometry_msgs/msg/wrench.hpp"
 #include "rcutils/logging_macros.h"
 #include "tf2_ros/buffer.h"
 #include "trajectory_msgs/msg/joint_trajectory_point.hpp"
@@ -25,8 +24,6 @@ controller_interface::CallbackReturn BaseController::on_init()
   catch (const std::exception & e)
   {
     RCLCPP_ERROR(
-      get_node()->get_logger(), "THIS IS THE BASE CONTROLLER FAILING: %s \n", e.what());
-    RCLCPP_ERROR(
       get_node()->get_logger(), "Exception thrown during init stage with message: %s \n", e.what());
     return controller_interface::CallbackReturn::ERROR;
   }
@@ -43,7 +40,15 @@ controller_interface::CallbackReturn BaseController::on_init()
   joint_command_ = last_joint_reference_;
   joint_state_ = last_joint_reference_;
   pose_reference_ = geometry_msgs::msg::PoseStamped();
-  using_joint_reference_interface_ = true;
+  twist_reference_ = geometry_msgs::msg::TwistStamped();
+  wrench_reference_ = geometry_msgs::msg::WrenchStamped();
+  last_pose_reference_ = pose_reference_;
+  last_twist_reference_ = twist_reference_;
+  last_wrench_reference_ = wrench_reference_;
+  using_joint_reference_ = true;
+  using_pose_reference_ = false;
+  using_twist_reference_ = false;
+  using_wrench_reference_ = false;
 
   return controller_interface::CallbackReturn::SUCCESS;
 }
@@ -80,10 +85,6 @@ controller_interface::InterfaceConfiguration BaseController::state_interface_con
     }
   }
 
-  // auto ft_interfaces = force_torque_sensor_->get_state_interface_names();
-  // state_interfaces_config_names.insert(
-  //   state_interfaces_config_names.end(), ft_interfaces.begin(), ft_interfaces.end());
-
   return {
     controller_interface::interface_configuration_type::INDIVIDUAL, state_interfaces_config_names};
 }
@@ -91,12 +92,6 @@ controller_interface::InterfaceConfiguration BaseController::state_interface_con
 std::vector<hardware_interface::CommandInterface>
 BaseController::on_export_reference_interfaces()
 {
-  // create CommandInterface interfaces that other controllers will be able to chain with
-  // if (!admittance_)
-  // {
-  //   return {};
-  // }
-
   std::vector<hardware_interface::CommandInterface> chainable_command_interfaces;
   const auto num_chainable_interfaces =
     base_controller_parameters_.chainable_command_interfaces.size() *
@@ -261,49 +256,40 @@ controller_interface::CallbackReturn BaseController::on_configure(
     get_interface_list(base_controller_parameters_.command_interfaces).c_str(),
     get_interface_list(base_controller_parameters_.state_interfaces).c_str());
 
-  // setup subscribers and publishers
+  // joint subscriber
   auto joint_command_callback =
     [this](const std::shared_ptr<trajectory_msgs::msg::JointTrajectoryPoint> msg)
   { input_joint_command_.writeFromNonRT(msg); };
   input_joint_command_subscriber_ =
     get_node()->create_subscription<trajectory_msgs::msg::JointTrajectoryPoint>(
       "~/joint_command", rclcpp::SystemDefaultsQoS(), joint_command_callback);
-
+  // pose subscriber
   auto pose_command_callback = 
     [this](const std::shared_ptr<geometry_msgs::msg::PoseStamped> msg)
   { input_pose_command_.writeFromNonRT(msg); };
   input_pose_command_subscriber_ =
     get_node()->create_subscription<geometry_msgs::msg::PoseStamped>(
       "~/pose_command", rclcpp::SystemDefaultsQoS(), pose_command_callback);
-
+  // twist subscriber
+  auto twist_command_callback = 
+    [this](const std::shared_ptr<geometry_msgs::msg::TwistStamped> msg)
+  { input_twist_command_.writeFromNonRT(msg); };
+  input_twist_command_subscriber_ =
+    get_node()->create_subscription<geometry_msgs::msg::TwistStamped>(
+      "~/twist_command", rclcpp::SystemDefaultsQoS(), twist_command_callback);
+  // wrench subscriber
+  auto wrench_command_callback = 
+    [this](const std::shared_ptr<geometry_msgs::msg::WrenchStamped> msg)
+  { input_wrench_command_.writeFromNonRT(msg); };
+  input_wrench_command_subscriber_ =
+    get_node()->create_subscription<geometry_msgs::msg::WrenchStamped>(
+      "~/wrench_command", rclcpp::SystemDefaultsQoS(), wrench_command_callback);
   
-  // s_publisher_ = get_node()->create_publisher<control_msgs::msg::BaseControllerState>(
-  //   "~/status", rclcpp::SystemDefaultsQoS());
-  // state_publisher_ =
-  //   std::make_unique<realtime_tools::RealtimePublisher<ControllerStateMsg>>(s_publisher_);
-
-  // Initialize state message
-  // state_publisher_->lock();
-  // state_publisher_->msg_ = admittance_->get_controller_state();
-  // state_publisher_->unlock();
-
-  // Initialize FTS semantic semantic_component
-  // force_torque_sensor_ = std::make_unique<semantic_components::ForceTorqueSensor>(
-  //   semantic_components::ForceTorqueSensor(base_controller_parameters_.ft_sensor.name));
-
-  // configure admittance rule
-  // if (admittance_->configure(get_node(), num_joints_) == controller_interface::return_type::ERROR)
-  // {
-  //   return controller_interface::CallbackReturn::ERROR;
-  // }
-
-  RCLCPP_INFO(get_node()->get_logger(), "ABOUT TO INITIALIZE IK SOLVER");
-
   // create ik solver
   ik_solver_ = std::make_unique<IKSolver>();
   if (
     !ik_solver_->initialize(
-      get_node()->get_node_parameters_interface(), base_controller_parameters_.kinematics.chain_base,
+      get_node()->get_node_parameters_interface(), base_controller_parameters_.kinematics.chain_root,
       base_controller_parameters_.kinematics.chain_tip
     )
   )
@@ -317,12 +303,6 @@ controller_interface::CallbackReturn BaseController::on_configure(
 controller_interface::CallbackReturn BaseController::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-  // on_activate is called when the lifecycle node activates.
-  // if (!admittance_)
-  // {
-  //   return controller_interface::CallbackReturn::ERROR;
-  // }
-
   // order all joints in the storage
   for (const auto & interface : base_controller_parameters_.state_interfaces)
   {
@@ -354,12 +334,6 @@ controller_interface::CallbackReturn BaseController::on_activate(
     }
   }
 
-  // update parameters if any have changed
-  // admittance_->apply_base_controller_parameters_update();
-
-  // initialize interface of the FTS semantic component
-  // force_torque_sensor_->assign_loaned_state_interfaces(state_interfaces_);
-
   // initialize states
   read_state_from_hardware(joint_state_);
   for (auto val : joint_state_.positions)
@@ -377,27 +351,42 @@ controller_interface::CallbackReturn BaseController::on_activate(
   joint_reference_ = joint_state_;
   joint_command_ = joint_state_;
 
+  // initialize cartesian reference interfaces
+  pose_reference_ = geometry_msgs::msg::PoseStamped();
+  twist_reference_ = geometry_msgs::msg::TwistStamped();
+  wrench_reference_ = geometry_msgs::msg::WrenchStamped();
+  last_pose_reference_ = pose_reference_;
+  last_twist_reference_ = twist_reference_;
+  last_wrench_reference_ = wrench_reference_;
+  using_joint_reference_ = true;
+  using_pose_reference_ = false;
+  using_twist_reference_ = false;
+  using_wrench_reference_ = false;
+
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
 controller_interface::return_type BaseController::update_reference_from_subscribers()
 {
-  // update input reference from ros subscriber message
-  // if (!admittance_)
-  // {
-  //   return controller_interface::return_type::ERROR;
-  // }
-
   pose_command_msg_ = *input_pose_command_.readFromRT();
   if (pose_command_msg_.get())
   {
     pose_reference_ = *pose_command_msg_;
-    using_joint_reference_interface_ = false;
+    using_joint_reference_ = false;
+    using_pose_reference_ = true;
+    using_twist_reference_ = false;
+  }
+
+  twist_command_msg_ = *input_twist_command_.readFromRT();
+  if (twist_command_msg_.get())
+  {
+    twist_reference_ = *twist_command_msg_;
+    using_joint_reference_ = false;
+    using_pose_reference_ = false;
+    using_twist_reference_ = true;
   }
 
   joint_command_msg_ = *input_joint_command_.readFromRT();
-
-  // if message exists, load values into references
   if (joint_command_msg_.get())
   {
     for (size_t i = 0; i < joint_command_msg_->positions.size(); ++i)
@@ -408,6 +397,16 @@ controller_interface::return_type BaseController::update_reference_from_subscrib
     {
       velocity_reference_[i].get() = joint_command_msg_->velocities[i];
     }
+    using_joint_reference_ = true;
+    using_pose_reference_ = false;
+    using_twist_reference_ = false;
+  }
+
+  wrench_command_msg_ = *input_wrench_command_.readFromRT();
+  if (wrench_command_msg_.get())
+  {
+    wrench_reference_ = *wrench_command_msg_;
+    using_wrench_reference_ = true;
   }
 
   return controller_interface::return_type::OK;
@@ -416,43 +415,12 @@ controller_interface::return_type BaseController::update_reference_from_subscrib
 controller_interface::return_type BaseController::update_and_write_commands(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & period)
 {
-  // Realtime constraints are required in this function
-  // if (!admittance_)
-  // {
-  //   return controller_interface::return_type::ERROR;
-  // }
-
-  // update input reference from chainable interfaces
-  read_state_reference_interfaces(joint_reference_);
-
-  // get all controller inputs
-  read_state_from_hardware(joint_state_);
-
-  // apply admittance control to reference to determine desired state
-  // admittance_->update(joint_state_, ft_values_, joint_reference_, period, joint_command_);
-
-  // write calculated values to joint interfaces
-  write_state_to_hardware(joint_command_);
-
-  // Publish controller state
-  // state_publisher_->lock();
-  // state_publisher_->msg_ = admittance_->get_controller_state();
-  // state_publisher_->unlockAndPublish();
-
   return controller_interface::return_type::OK;
 }
 
 controller_interface::CallbackReturn BaseController::on_deactivate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-  // if (!admittance_)
-  // {
-  //   return controller_interface::CallbackReturn::ERROR;
-  // }
-
-  // release force torque sensor interface
-  // force_torque_sensor_->release_interfaces();
-
   // reset to prevent stale references
   for (size_t i = 0; i < num_joints_; i++)
   {
@@ -466,7 +434,6 @@ controller_interface::CallbackReturn BaseController::on_deactivate(
     joint_state_interface_[index].clear();
   }
   release_interfaces();
-  // admittance_->reset(num_joints_);
 
   return CallbackReturn::SUCCESS;
 }
@@ -480,11 +447,6 @@ controller_interface::CallbackReturn BaseController::on_cleanup(
 controller_interface::CallbackReturn BaseController::on_error(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-  // if (!admittance_)
-  // {
-  //   return controller_interface::CallbackReturn::ERROR;
-  // }
-  // admittance_->reset(num_joints_);
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
@@ -534,17 +496,6 @@ void BaseController::read_state_from_hardware(
   {
     state_current.accelerations = last_joint_command_.accelerations;
   }
-
-  // geometry_msgs::msg::Wrench & ft_values
-  // if any ft_values are nan, assume values are zero
-  // force_torque_sensor_->get_values_as_message(ft_values);
-  // if (
-  //   std::isnan(ft_values.force.x) || std::isnan(ft_values.force.y) ||
-  //   std::isnan(ft_values.force.z) || std::isnan(ft_values.torque.x) ||
-  //   std::isnan(ft_values.torque.y) || std::isnan(ft_values.torque.z))
-  // {
-  //   ft_values = geometry_msgs::msg::Wrench();
-  // }
 }
 
 void BaseController::write_state_to_hardware(
@@ -578,8 +529,6 @@ void BaseController::write_state_to_hardware(
 void BaseController::read_state_reference_interfaces(
   trajectory_msgs::msg::JointTrajectoryPoint & state_reference)
 {
-  // TODO(destogl): check why is this here?
-
   // if any interface has nan values, assume state_reference is the last set reference
   for (size_t i = 0; i < num_joints_; ++i)
   {
@@ -602,7 +551,9 @@ void BaseController::read_state_reference_interfaces(
     state_reference.positions != last_joint_reference_.positions ||
     state_reference.velocities != last_joint_reference_.velocities)
   {
-    using_joint_reference_interface_ = true;
+    using_joint_reference_ = true;
+    using_pose_reference_ = false;
+    using_twist_reference_ = false;
   }
 
   last_joint_reference_.positions = state_reference.positions;
