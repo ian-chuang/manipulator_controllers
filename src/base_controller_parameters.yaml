@@ -48,6 +48,13 @@ base_controller:
       type: string,
       description: "Specifies the end effector link of the robot description used by KDL."
     }
+  
+  forward_dynamics_solver:
+    virtual_link_mass: {
+      type: double,
+      default_value: 1.0,
+      description: "Specifies the mass of the virtual link used in the forward dynamics solver."
+    }
 
   # general settings
   robot_description: {

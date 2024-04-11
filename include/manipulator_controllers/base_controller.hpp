@@ -25,6 +25,7 @@
 #include "realtime_tools/realtime_buffer.h"
 #include "tf2_eigen/tf2_eigen.hpp"
 #include "manipulator_controllers/ik_solver.hpp"
+#include "manipulator_controllers/fk_solver.hpp"
 #include "manipulator_controllers/utils.hpp"
 
 namespace manipulator_controllers
@@ -156,6 +157,7 @@ protected:
 
   // Kinematics interface plugin loader
   std::unique_ptr<manipulator_controllers::IKSolver> ik_solver_;
+  std::unique_ptr<manipulator_controllers::FKSolver> fk_solver_;
 
   /**
    * @brief Read values from hardware interfaces and set corresponding fields of state_current and

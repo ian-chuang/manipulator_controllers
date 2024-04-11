@@ -41,8 +41,10 @@ protected:
   Eigen::Matrix<double, 6, 1> damping_ratio_;
   Eigen::Matrix<double, 6, 1> damping_;
   Eigen::Matrix<double, 6, 1> selected_axes_;
-  Eigen::Matrix<double, 6, 1> mass_;
-  Eigen::Matrix<double, 6, 1> mass_inv_;
+  // Eigen::Matrix<double, 6, 1> mass_;
+  // Eigen::Matrix<double, 6, 1> mass_inv_;
+  Eigen::Matrix<double, 6, 1> error_scale_;
+  Eigen::Matrix<double, 6, 1> max_spring_force_;
   // Eigen::VectorXd joint_ref_pos_;
   // Eigen::VectorXd joint_cur_pos_;
   // Eigen::VectorXd joint_cur_vel_;

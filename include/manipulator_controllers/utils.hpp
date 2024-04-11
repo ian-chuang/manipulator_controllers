@@ -21,6 +21,16 @@ namespace manipulator_controllers
     }
   }
 
+  inline Eigen::MatrixXd clip( const Eigen::MatrixXd& value, const Eigen::MatrixXd& min, const Eigen::MatrixXd& max) {
+    // confirm dimensions are the same
+    assert(value.rows() == min.rows());
+    assert(value.cols() == min.cols());
+    assert(value.rows() == max.rows());
+    assert(value.cols() == max.cols());
+
+    return value.cwiseMin(max).cwiseMax(min);
+  }
+
   inline void pseudo_inverse(const Eigen::MatrixXd& M_, Eigen::MatrixXd& M_pinv_, bool damped = true) {
     double lambda_ = damped ? 0.2 : 0.0;
 

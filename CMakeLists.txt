@@ -75,6 +75,7 @@ add_library(impedance_pose_controller SHARED
   src/base_force_controller.cpp
   src/base_controller.cpp
   src/ik_solver.cpp
+  src/fk_solver.cpp
 )
 target_compile_features(impedance_pose_controller PUBLIC cxx_std_17)
 target_include_directories(impedance_pose_controller PUBLIC

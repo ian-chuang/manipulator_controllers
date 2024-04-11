@@ -289,6 +289,18 @@ controller_interface::CallbackReturn BaseController::on_configure(
   ik_solver_ = std::make_unique<IKSolver>();
   if (
     !ik_solver_->initialize(
+      get_node()->get_node_parameters_interface(), base_controller_parameters_.kinematics.robot_base,
+      base_controller_parameters_.kinematics.robot_end_effector,
+      base_controller_parameters_.forward_dynamics_solver.virtual_link_mass
+    )
+  )
+  {
+    return controller_interface::CallbackReturn::ERROR;
+  }
+  // create fk solver
+  fk_solver_ = std::make_unique<FKSolver>();
+  if (
+    !fk_solver_->initialize(
       get_node()->get_node_parameters_interface(), base_controller_parameters_.kinematics.chain_root,
       base_controller_parameters_.kinematics.chain_tip
     )

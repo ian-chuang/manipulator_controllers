@@ -8,11 +8,14 @@ bool ImpedancePoseController::set_params()
   vec_to_eigen(impedance_pose_controller_parameters_.impedance.control.stiffness, stiffness_);
   vec_to_eigen(impedance_pose_controller_parameters_.impedance.control.damping_ratio, damping_ratio_);
   vec_to_eigen(impedance_pose_controller_parameters_.impedance.control.selected_axes, selected_axes_);
-  vec_to_eigen(impedance_pose_controller_parameters_.impedance.control.mass, mass_);
+  vec_to_eigen(impedance_pose_controller_parameters_.impedance.control.error_scale, error_scale_);
+  vec_to_eigen(impedance_pose_controller_parameters_.impedance.control.max_spring_force, max_spring_force_);
   for (size_t i = 0; i < 6; ++i)
   {
-    mass_inv_[i] = 1.0 / mass_[i];
-    damping_[i] = damping_ratio_[i] * 2 * sqrt(mass_[i] * stiffness_[i]);
+    // mass_inv_[i] = 1.0 / mass_[i];
+    // damping_[i] = damping_ratio_[i] * 2 * sqrt(mass_[i] * stiffness_[i]);
+
+    damping_[i] = damping_ratio_[i] * 2 * sqrt(stiffness_[i]);
   }
 
   // nullspace joint position check that size is correct
@@ -156,7 +159,7 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   } 
   else if (using_joint_reference_) {
     // get pose from joint reference
-    ik_solver_->calculate_link_transform(
+    fk_solver_->calculate_link_transform(
       joint_ref_pos, 
       base_controller_parameters_.kinematics.robot_base, 
       base_controller_parameters_.kinematics.robot_end_effector, 
@@ -174,7 +177,7 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   bool success = true;
   // get current_pose
   Eigen::Isometry3d current_pose;
-  success &= ik_solver_->calculate_link_transform(
+  success &= fk_solver_->calculate_link_transform(
     joint_cur_pos, 
     base_controller_parameters_.kinematics.robot_base, 
     base_controller_parameters_.kinematics.robot_end_effector, 
@@ -182,7 +185,7 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   );
   // get control frame
   Eigen::Isometry3d control_frame;
-  success &= ik_solver_->calculate_link_transform(
+  success &= fk_solver_->calculate_link_transform(
     joint_cur_pos, 
     base_controller_parameters_.kinematics.robot_base, 
     impedance_pose_controller_parameters_.impedance.control.frame, 
@@ -231,35 +234,63 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   base_wrench.block<3, 1>(0, 0) = control_frame.rotation() * control_wrench.block<3, 1>(0, 0);
   base_wrench.block<3, 1>(3, 0) = control_frame.rotation() * control_wrench.block<3, 1>(3, 0);
 
-  // Compute admittance control law in the base frame: F = M*x_ddot + D*x_dot + K*x
-  Eigen::Matrix<double, 6, 1> task_des_acc = 
-    mass_inv_.cwiseProduct(base_wrench - damping_matrix * current_twist - stiffness_matrix * pose_error);
+  // apply max spring force in the control frame
+  Eigen::Matrix<double, 6, 1> spring_force = stiffness_matrix * pose_error;
+  spring_force.block<3, 1>(0, 0) = control_frame.rotation().transpose() * spring_force.block<3, 1>(0, 0);
+  spring_force.block<3, 1>(3, 0) = control_frame.rotation().transpose() * spring_force.block<3, 1>(3, 0);
+  spring_force = clip(spring_force, -max_spring_force_, max_spring_force_);
+  spring_force.block<3, 1>(0, 0) = control_frame.rotation() * spring_force.block<3, 1>(0, 0);
+  spring_force.block<3, 1>(3, 0) = control_frame.rotation() * spring_force.block<3, 1>(3, 0);
 
-  // damped inverse
-  Eigen::Matrix<double, Eigen::Dynamic, 6> J_inverse =
-     (J.transpose() * J + impedance_pose_controller_parameters_.impedance.pinv_damping * I).inverse() * J.transpose();
-  joint_des_acc = J_inverse * task_des_acc;
+  // calculate impedance control law in base frame
+  Eigen::Matrix<double, 6, 1> net_force = base_wrench - damping_matrix * current_twist - spring_force;
+
+  // apply error scale in the control frame
+  net_force.block<3, 1>(0, 0) = control_frame.rotation().transpose() * net_force.block<3, 1>(0, 0);
+  net_force.block<3, 1>(3, 0) = control_frame.rotation().transpose() * net_force.block<3, 1>(3, 0);
+  net_force = net_force.cwiseProduct(error_scale_);
+  net_force.block<3, 1>(0, 0) = control_frame.rotation() * net_force.block<3, 1>(0, 0);
+  net_force.block<3, 1>(3, 0) = control_frame.rotation() * net_force.block<3, 1>(3, 0);
+
+  
+  //damped inverse
+  //Compute admittance control law in the base frame: F = M*x_ddot + D*x_dot + K*x
+  // Eigen::Matrix<double, 6, 1> task_des_acc = 
+  //   mass_inv_.cwiseProduct( - damping_matrix * current_twist - clip(stiffness_matrix * pose_error, -max_spring_force_, max_spring_force_));
+  // Eigen::Matrix<double, Eigen::Dynamic, 6> J_inverse =
+  //    (J.transpose() * J + impedance_pose_controller_parameters_.impedance.pinv_damping * I).inverse() * J.transpose();
+  // joint_des_acc = J_inverse * task_des_acc;
+
+
+  
+
+  // forward dynamics solver
+  ik_solver_->task_force_to_joint_acc(
+    joint_cur_pos, 
+    net_force, 
+    base_controller_parameters_.kinematics.robot_end_effector, 
+    joint_des_acc
+  );
 
   // nullspace stiffness and damping
   joint_des_acc += (I - J.transpose() * J_pinv) *
                     (
-                      stiffness_matrix * (nullspace_joint_pos - joint_cur_pos) -
-                      damping_matrix * joint_des_vel
+                      nullspace_stiffness_.asDiagonal() * (nullspace_joint_pos - joint_cur_pos) -
+                      nullspace_damping_.asDiagonal() * joint_des_vel
                     );
 
-  // add joint damping 
-  double lin_vel = current_twist.block<3, 1>(0, 0).norm();
-  double ang_vel = current_twist.block<3, 1>(3, 0).norm();
-  if (
-    lin_vel < impedance_pose_controller_parameters_.impedance.joint_damping.lin_vel_threshold ||
-    ang_vel < impedance_pose_controller_parameters_.impedance.joint_damping.ang_vel_threshold
-  ) {
-    joint_des_acc -= impedance_pose_controller_parameters_.impedance.joint_damping.damping * joint_des_vel;  // TODO: use joint_des_vel_ or joint_cur_vel_?
-  }
+  // more joint damping because why not
+  joint_des_acc -= impedance_pose_controller_parameters_.impedance.joint_damping * joint_des_vel;
 
   // integrate
   joint_des_vel += period.seconds() * joint_des_acc;
+  joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
   joint_des_pos += period.seconds() * joint_des_vel;
+
+  // Numerical time integration with the Euler forward method
+  // joint_des_pos += joint_des_vel * period.seconds();
+  // joint_des_vel += joint_des_acc * period.seconds();
+  // joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
 
   // write commands
   for (size_t i = 0; i < num_joints_; ++i)

@@ -155,28 +155,28 @@ void BaseForceController::process_wrench_measurements(
   // get transforms
   bool success = true;
   Eigen::Isometry3d world_sensor_transform;
-  success &= ik_solver_->calculate_link_transform(
+  success &= fk_solver_->calculate_link_transform(
     joint_pos, 
     base_force_controller_parameters_.ft_sensor.gravity_compensation.gravity_frame,
     base_force_controller_parameters_.ft_sensor.ft_frame,
     world_sensor_transform
   );
   Eigen::Isometry3d world_cog_transform;
-  success &= ik_solver_->calculate_link_transform(
+  success &= fk_solver_->calculate_link_transform(
     joint_pos, 
     base_force_controller_parameters_.ft_sensor.gravity_compensation.gravity_frame,
     base_force_controller_parameters_.ft_sensor.gravity_compensation.CoG.frame,
     world_cog_transform
   );
   Eigen::Isometry3d base_compliance_transform;
-  success &= ik_solver_->calculate_link_transform(
+  success &= fk_solver_->calculate_link_transform(
     joint_pos, 
     base_controller_parameters_.kinematics.robot_base,
     base_force_controller_parameters_.ft_sensor.new_ft_frame,
     base_compliance_transform
   );
   Eigen::Isometry3d compliance_sensor_transform;
-  success &= ik_solver_->calculate_link_transform(
+  success &= fk_solver_->calculate_link_transform(
     joint_pos, 
     base_force_controller_parameters_.ft_sensor.new_ft_frame,
     base_force_controller_parameters_.ft_sensor.ft_frame,
@@ -202,11 +202,14 @@ void BaseForceController::process_wrench_measurements(
   // transform wrench to world frame
   Eigen::Matrix<double, 6, 1> world_wrench;
   world_wrench.block<3, 1>(0, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(0, 0);
-  world_wrench.block<3, 1>(3, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(3, 0);
+  world_wrench.block<3, 1>(3, 0) = world_sensor_transform.rotation() * sensor_wrench.block<3, 1>(3, 0); 
+
 
   // apply gravity compensation
-  world_wrench(2, 0) -= end_effector_weight_[2];
-  world_wrench.block<3, 1>(3, 0) -= (world_cog_transform.rotation() * cog_pos_).cross(end_effector_weight_);
+  Eigen::Matrix<double, 6, 1>  gravity_compensation = Eigen::Matrix<double, 6, 1>::Zero();
+  gravity_compensation(2, 0) = end_effector_weight_[2];
+  gravity_compensation.block<3, 1>(3, 0) = (world_cog_transform.rotation() * cog_pos_).cross(end_effector_weight_);
+  world_wrench -= gravity_compensation;
 
   // zero wrench if flag is set
   if (zero_wrench_flag_.load()) {

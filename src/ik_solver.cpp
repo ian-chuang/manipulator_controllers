@@ -6,11 +6,13 @@ namespace manipulator_controllers
 bool IKSolver::initialize(
   std::shared_ptr<rclcpp::node_interfaces::NodeParametersInterface> parameters_interface,
   const std::string & base_link,
-  const std::string & ee_link
+  const std::string & ee_link,
+  const double & virtual_link_mass = 1.0
 ) {
   initialized_ = true;
   base_link_ = base_link;
   ee_link_ = ee_link;
+  virtual_link_mass_ = virtual_link_mass;
   parameters_interface_ = parameters_interface;
   // alpha_ = alpha;
 
@@ -43,95 +45,72 @@ bool IKSolver::initialize(
   // allocate dynamics memory
   num_joints_ = chain_.getNrOfJoints();
   q_ = KDL::JntArray(num_joints_);
-  q_dot_ = KDL::JntArray(num_joints_);
   jacobian_ = std::make_shared<KDL::Jacobian>(num_joints_);
-  // I_ = Eigen::MatrixXd(num_joints_, num_joints_);
-  // I_.setIdentity();
+  jnt_space_inertia_ = std::make_shared<KDL::JntSpaceInertiaMatrix>(num_joints_);
   // create KDL solvers
-  fk_pos_solver_ = std::make_shared<KDL::ChainFkSolverPos_recursive>(chain_);
-  fk_vel_solver_ = std::make_shared<KDL::ChainFkSolverVel_recursive>(chain_);
   jac_solver_ = std::make_shared<KDL::ChainJntToJacSolver>(chain_);
+  jnt_space_inertia_solver_ = std::make_shared<KDL::ChainDynParam>(chain_, KDL::Vector::Zero());
+
+  buildGenericModel();
 
   return true;
 }
 
-bool IKSolver::calculate_link_transform(
-  const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos, 
-  const std::string & parent_link,
-  const std::string & child_link,
-  Eigen::Isometry3d & pose
-)
-{
-  // verify inputs
-  if (
-    !verify_initialized() || 
-    !verify_joint_vector(joint_pos) || 
-    !verify_link_name(parent_link) ||
-    !verify_link_name(child_link)
-  )
-  {
-    return false;
-  }
 
-  // get joint array
-  q_.data = joint_pos;
-
-  KDL::Frame parent_frame;
-  KDL::Frame child_frame;
-  Eigen::Isometry3d parent_transform;
-  Eigen::Isometry3d child_transform;
-
-  fk_pos_solver_->JntToCart(q_, parent_frame, link_name_map_[parent_link]);
-  fk_pos_solver_->JntToCart(q_, child_frame, link_name_map_[child_link]);
-
-  tf2::transformKDLToEigen(parent_frame, parent_transform);
-  tf2::transformKDLToEigen(child_frame, child_transform);
-
-  pose = parent_transform.inverse() * child_transform;
-  
-  return true;
-}
-
-bool IKSolver::calculate_link_twist(
-    const Eigen::VectorXd & joint_pos,
-    const Eigen::VectorXd & joint_vel, 
+void IKSolver::task_force_to_joint_acc(
+    const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos, 
+    const Eigen::Matrix<double, 6, 1> & net_force,
     const std::string & link_name,
-    Eigen::Matrix<double, 6, 1> & twist)
+    Eigen::VectorXd & joint_acc
+  )
 {
-  // verify inputs
-  if (!verify_initialized() || 
-    !verify_joint_vector(joint_pos) || 
-    !verify_joint_vector(joint_vel) ||
-    !verify_link_name(link_name))
-  {
-    return false;
-  }
-
-  // get joint array
   q_.data = joint_pos;
-  q_dot_.data = joint_vel;
 
-  // set zero
-  twist.setZero();
+  // Compute joint space inertia matrix with actualized link masses
+  buildGenericModel();
+  jnt_space_inertia_solver_->JntToMass(q_, *jnt_space_inertia_);
 
-  // special case: since the root is not in the robot tree, need to return zero twist
-  if (link_name == base_link_)
+  // calculate Jacobian
+  jac_solver_->JntToJac(q_, *jacobian_, link_name_map_[link_name]);
+
+  // Compute joint accelerations according to: \f$ \ddot{q} = H^{-1} ( J^T f) \f$
+  joint_acc =
+    jnt_space_inertia_->data.inverse() * jacobian_->data.transpose() * net_force;
+}
+
+bool IKSolver::buildGenericModel()
+{
+  // Set all masses and inertias to minimal (yet stable) values.
+  double ip_min = 0.000001;
+  for (size_t i = 0; i < chain_.segments.size(); ++i)
   {
-    return true;
+    // Fixed joint segment
+    if (chain_.segments[i].getJoint().getType() == KDL::Joint::None)
+    {
+      chain_.segments[i].setInertia(KDL::RigidBodyInertia::Zero());
+    }
+    else  // relatively moving segment
+    {
+      chain_.segments[i].setInertia(
+        KDL::RigidBodyInertia(virtual_link_mass_,                          // mass
+                              KDL::Vector::Zero(),            // center of gravity
+                              KDL::RotationalInertia(ip_min,  // ixx
+                                                     ip_min,  // iyy
+                                                     ip_min   // izz
+                                                     // ixy, ixy, iyz default to 0.0
+                                                     )));
+    }
   }
 
-  // Absolute velocity w. r. t. base
-  KDL::FrameVel vel;
-  fk_vel_solver_->JntToCart(KDL::JntArrayVel(q_, q_dot_), vel);
-  twist[0] = vel.deriv().vel.x();
-  twist[1] = vel.deriv().vel.y();
-  twist[2] = vel.deriv().vel.z();
-  twist[3] = vel.deriv().rot.x();
-  twist[4] = vel.deriv().rot.y();
-  twist[5] = vel.deriv().rot.z();
+  // Only give the last segment a generic mass and inertia.
+  // See https://arxiv.org/pdf/1908.06252.pdf for a motivation for this setting.
+  double m = 1;
+  double ip = 1;
+  chain_.segments[chain_.segments.size() - 1].setInertia(
+    KDL::RigidBodyInertia(m, KDL::Vector::Zero(), KDL::RotationalInertia(ip, ip, ip)));
 
   return true;
-}  
+}
 
 bool IKSolver::calculate_jacobian(
   const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos, const std::string & link_name,
