@@ -1,5 +1,5 @@
-#ifndef POSE_CONTROLLER__POSE_CONTROLLER_HPP_
-#define POSE_CONTROLLER__POSE_CONTROLLER_HPP_
+#ifndef TWIST_CONTROLLER__TWIST_CONTROLLER_HPP_
+#define TWIST_CONTROLLER__TWIST_CONTROLLER_HPP_
 
 #include <chrono>
 #include <memory>
@@ -7,13 +7,13 @@
 #include <vector>
 
 // include generated parameter library
-#include "pose_controller_parameters.hpp"
+#include "twist_controller_parameters.hpp"
 
 #include "manipulator_controllers/base_controller.hpp"
 
 namespace manipulator_controllers
 {
-class PoseController : public manipulator_controllers::BaseController
+class TwistController : public manipulator_controllers::BaseController
 {
 public:
 
@@ -33,13 +33,10 @@ protected:
   bool set_params();
 
   // parameters
-  std::shared_ptr<pose_controller::ParamListener> pose_controller_parameter_handler_;
-  pose_controller::Params pose_controller_parameters_;
+  std::shared_ptr<twist_controller::ParamListener> twist_controller_parameter_handler_;
+  twist_controller::Params twist_controller_parameters_;
 
-  Eigen::Matrix<double, 6, 1> kp_;
-  Eigen::Matrix<double, 6, 1> kd_ratio_;
   Eigen::Matrix<double, 6, 1> kd_;
-  Eigen::Matrix<double, 6, 1> max_twist_;
   Eigen::VectorXd nullspace_joint_pos_;
   Eigen::VectorXd nullspace_kp_;
   Eigen::VectorXd nullspace_kd_ratio_;
@@ -48,4 +45,4 @@ protected:
 
 }  // namespace manipulator_controllers
 
-#endif  // POSE_CONTROLLER__POSE_CONTROLLER_HPP_
+#endif  // TWIST_CONTROLLER__TWIST_CONTROLLER_HPP_

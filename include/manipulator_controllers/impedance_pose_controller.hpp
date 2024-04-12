@@ -56,7 +56,7 @@ protected:
   Eigen::VectorXd nullspace_damping_ratio_;
   Eigen::VectorXd nullspace_damping_;
   
-  Eigen::MatrixXd I_;
+  // Eigen::MatrixXd I_;
 
 
 };

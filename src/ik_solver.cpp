@@ -57,7 +57,7 @@ bool IKSolver::initialize(
 }
 
 
-void IKSolver::task_force_to_joint_acc(
+void IKSolver::forwardDynamics(
     const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos, 
     const Eigen::Matrix<double, 6, 1> & net_force,
     const std::string & link_name,
@@ -76,6 +76,58 @@ void IKSolver::task_force_to_joint_acc(
   // Compute joint accelerations according to: \f$ \ddot{q} = H^{-1} ( J^T f) \f$
   joint_acc =
     jnt_space_inertia_->data.inverse() * jacobian_->data.transpose() * net_force;
+}
+
+void IKSolver::selectivelyDampedLeastSquares(
+    const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos, 
+    const Eigen::Matrix<double, 6, 1> & net_error,
+    const std::string & link_name,
+    Eigen::VectorXd & joint_vel
+  )
+{
+  q_.data = joint_pos;
+
+  // Compute joint Jacobian
+  jac_solver_->JntToJac(q_, *jacobian_, link_name_map_[link_name]);
+
+  Eigen::JacobiSVD<Eigen::Matrix<double, 6, Eigen::Dynamic> > JSVD(
+    jacobian_->data, Eigen::ComputeFullU | Eigen::ComputeFullV);
+  Eigen::Matrix<double, 6, 6> U = JSVD.matrixU();
+  Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> V = JSVD.matrixV();
+  Eigen::Matrix<double, Eigen::Dynamic, 1> s = JSVD.singularValues();
+
+  // Default recommendation by Buss and Kim.
+  const double gamma_max = 3.141592653 / 4;
+
+  Eigen::Matrix<double, Eigen::Dynamic, 1> sum_phi =
+    Eigen::Matrix<double, Eigen::Dynamic, 1>::Zero(num_joints_);
+
+  // Compute each joint velocity with the SDLS method.  This implements the
+  // algorithm as described in the paper (but for only one end-effector).
+  // Also see Buss' own implementation:
+  // https://www.math.ucsd.edu/~sbuss/ResearchWeb/ikmethods/index.html
+
+  for (size_t i = 0; i < num_joints_; ++i)
+  {
+    double alpha = U.col(i).transpose() * net_error;
+
+    double N = U.col(i).head(3).norm();
+    double M = 0;
+    for (size_t j = 0; j < num_joints_; ++j)
+    {
+      double rho = jacobian_->data.col(j).head(3).norm();
+      M += std::abs(V.col(i)[j]) * rho;
+    }
+    M *= 1.0 / s[i];
+
+    double gamma = std::min(1.0, N / M) * gamma_max;
+
+    Eigen::Matrix<double, Eigen::Dynamic, 1> phi =
+      clampMaxAbs(1.0 / s[i] * alpha * V.col(i), gamma);
+    sum_phi += phi;
+  }
+
+  joint_vel = clampMaxAbs(sum_phi, gamma_max);
 }
 
 bool IKSolver::buildGenericModel()
@@ -110,6 +162,19 @@ bool IKSolver::buildGenericModel()
     KDL::RigidBodyInertia(m, KDL::Vector::Zero(), KDL::RotationalInertia(ip, ip, ip)));
 
   return true;
+}
+
+Eigen::Matrix<double, Eigen::Dynamic, 1> IKSolver::clampMaxAbs(
+  const Eigen::Matrix<double, Eigen::Dynamic, 1> & w, double d)
+{
+  if (w.cwiseAbs().maxCoeff() <= d)
+  {
+    return w;
+  }
+  else
+  {
+    return d * w / w.cwiseAbs().maxCoeff();
+  }
 }
 
 bool IKSolver::calculate_jacobian(

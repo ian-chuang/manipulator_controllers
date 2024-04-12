@@ -1,0 +1,9 @@
+<library path="twist_controller">
+  <class name="manipulator_controllers/TwistController"
+         type="manipulator_controllers::TwistController"
+         base_class_type="controller_interface::ChainableControllerInterface">
+    <description>
+      TwistController ros2_control controller.
+    </description>
+  </class>
+</library>

@@ -1,35 +1,29 @@
-#include "manipulator_controllers/pose_controller.hpp"
+#include "manipulator_controllers/twist_controller.hpp"
 
 namespace manipulator_controllers
 {
 
 
-bool PoseController::set_params() 
+bool TwistController::set_params() 
 {
-  vec_to_eigen(pose_controller_parameters_.diff_ik.control.kp, kp_);
-  vec_to_eigen(pose_controller_parameters_.diff_ik.control.kd_ratio, kd_ratio_);
-  vec_to_eigen(pose_controller_parameters_.diff_ik.control.max_twist, max_twist_);
-  for (size_t i = 0; i < 6; ++i)
-  {
-    kd_[i] = kd_ratio_[i] * 2 * sqrt(kp_[i]);
-  }
-
+  vec_to_eigen(twist_controller_parameters_.diff_ik.control.kd, kd_);
+ 
   // nullspace joint position check that size is correct
-  if (pose_controller_parameters_.diff_ik.nullspace.joint_positions.size() != num_joints_)
+  if (twist_controller_parameters_.diff_ik.nullspace.joint_positions.size() != num_joints_)
   {
     RCLCPP_ERROR(
       get_node()->get_logger(),
       "Size of nullspace_joint_position parameter does not match number of joints");
     return false;
   }
-  if (pose_controller_parameters_.diff_ik.nullspace.kp.size() != num_joints_)
+  if (twist_controller_parameters_.diff_ik.nullspace.kp.size() != num_joints_)
   {
     RCLCPP_ERROR(
       get_node()->get_logger(),
       "Size of nullspace_kp parameter does not match number of joints");
     return false;
   }
-  if (pose_controller_parameters_.diff_ik.nullspace.kd_ratio.size() != num_joints_)
+  if (twist_controller_parameters_.diff_ik.nullspace.kd_ratio.size() != num_joints_)
   {
     RCLCPP_ERROR(
       get_node()->get_logger(),
@@ -40,9 +34,9 @@ bool PoseController::set_params()
   nullspace_kp_ = Eigen::VectorXd::Zero(num_joints_);
   nullspace_kd_ratio_ = Eigen::VectorXd::Zero(num_joints_);
   nullspace_kd_ = Eigen::VectorXd::Zero(num_joints_);
-  vec_to_eigen(pose_controller_parameters_.diff_ik.nullspace.joint_positions, nullspace_joint_pos_);
-  vec_to_eigen(pose_controller_parameters_.diff_ik.nullspace.kp, nullspace_kp_);
-  vec_to_eigen(pose_controller_parameters_.diff_ik.nullspace.kd_ratio, nullspace_kd_ratio_);
+  vec_to_eigen(twist_controller_parameters_.diff_ik.nullspace.joint_positions, nullspace_joint_pos_);
+  vec_to_eigen(twist_controller_parameters_.diff_ik.nullspace.kp, nullspace_kp_);
+  vec_to_eigen(twist_controller_parameters_.diff_ik.nullspace.kd_ratio, nullspace_kd_ratio_);
   for (size_t i = 0; i < num_joints_; ++i)
   {
     nullspace_kd_[i] = nullspace_kd_ratio_[i] * 2 * sqrt(nullspace_kp_[i]);
@@ -51,7 +45,7 @@ bool PoseController::set_params()
   return true;
 }
 
-controller_interface::CallbackReturn PoseController::on_init()
+controller_interface::CallbackReturn TwistController::on_init()
 {
   auto ret = BaseController::on_init();
   if (ret != controller_interface::CallbackReturn::SUCCESS)
@@ -62,8 +56,8 @@ controller_interface::CallbackReturn PoseController::on_init()
   // initialize controller config
   try
   {
-    pose_controller_parameter_handler_ = std::make_shared<pose_controller::ParamListener>(get_node());
-    pose_controller_parameters_ = pose_controller_parameter_handler_->get_params();
+    twist_controller_parameter_handler_ = std::make_shared<twist_controller::ParamListener>(get_node());
+    twist_controller_parameters_ = twist_controller_parameter_handler_->get_params();
   }
   catch (const std::exception & e)
   {
@@ -75,7 +69,7 @@ controller_interface::CallbackReturn PoseController::on_init()
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-controller_interface::CallbackReturn PoseController::on_configure(
+controller_interface::CallbackReturn TwistController::on_configure(
   const rclcpp_lifecycle::State & previous_state)
 {
   auto ret = BaseController::on_configure(previous_state);
@@ -93,7 +87,7 @@ controller_interface::CallbackReturn PoseController::on_configure(
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-controller_interface::CallbackReturn PoseController::on_activate(
+controller_interface::CallbackReturn TwistController::on_activate(
   const rclcpp_lifecycle::State & previous_state)
 {
   auto ret = BaseController::on_activate(previous_state);
@@ -112,7 +106,7 @@ controller_interface::CallbackReturn PoseController::on_activate(
 }
 
 
-controller_interface::return_type PoseController::update_and_write_commands(
+controller_interface::return_type TwistController::update_and_write_commands(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & period)
 {
   // update input reference from chainable interfaces
@@ -121,43 +115,18 @@ controller_interface::return_type PoseController::update_and_write_commands(
   BaseController::read_state_from_hardware(joint_state_);
 
   // get required joint vals (as Eigen)
-  Eigen::VectorXd joint_ref_pos = Eigen::VectorXd::Zero(num_joints_);
+  Eigen::VectorXd joint_ref_vel = Eigen::VectorXd::Zero(num_joints_);
   Eigen::VectorXd joint_cur_pos = Eigen::VectorXd::Zero(num_joints_);
   Eigen::VectorXd joint_cur_vel = Eigen::VectorXd::Zero(num_joints_);
   Eigen::VectorXd joint_des_pos = Eigen::VectorXd::Zero(num_joints_);
   Eigen::VectorXd joint_des_vel = Eigen::VectorXd::Zero(num_joints_);
   Eigen::VectorXd joint_des_acc = Eigen::VectorXd::Zero(num_joints_);
-  vec_to_eigen(joint_reference_.positions, joint_ref_pos);
+  vec_to_eigen(joint_reference_.velocities, joint_ref_vel);
   vec_to_eigen(joint_state_.positions, joint_cur_pos);
   vec_to_eigen(joint_state_.velocities, joint_cur_vel);
   vec_to_eigen(joint_command_.positions, joint_des_pos);
   vec_to_eigen(joint_command_.velocities, joint_des_vel);
   vec_to_eigen(joint_command_.accelerations, joint_des_acc);
-
-  // get target pose and nullspace joint positions from reference
-  Eigen::Isometry3d target_pose;
-  Eigen::VectorXd nullspace_joint_pos;
-  if (using_pose_reference_) {
-    // get pose msg
-    tf2::fromMsg(pose_reference_.pose, target_pose);
-    // use nullspace joints from config
-    nullspace_joint_pos = nullspace_joint_pos_;
-  } 
-  else if (using_joint_reference_) {
-    // get pose from joint reference
-    fk_solver_->calculate_link_transform(
-      joint_ref_pos, 
-      base_controller_parameters_.kinematics.robot_base, 
-      base_controller_parameters_.kinematics.robot_end_effector, 
-      target_pose);
-    // use nullspace joints from reference
-    nullspace_joint_pos = joint_ref_pos;
-  }
-  else {
-    RCLCPP_ERROR(get_node()->get_logger(), "Invalid reference provided");
-    BaseController::write_state_to_hardware(joint_command_);
-    return controller_interface::return_type::OK;
-  }
 
   // get required transforms and Jacobian
   bool success = true;
@@ -174,18 +143,40 @@ controller_interface::return_type PoseController::update_and_write_commands(
   success &= fk_solver_->calculate_link_transform(
     joint_cur_pos, 
     base_controller_parameters_.kinematics.robot_base, 
-    pose_controller_parameters_.diff_ik.control.frame, 
+    twist_controller_parameters_.diff_ik.control.frame, 
     control_frame
   );
-  // get jacobian
-  Eigen::Matrix<double, 6, Eigen::Dynamic> J;
-  success &= ik_solver_->calculate_jacobian(joint_cur_pos, base_controller_parameters_.kinematics.robot_end_effector, J);
 
   if (!success)
   {
     RCLCPP_ERROR(get_node()->get_logger(), "Failed to calculate required transforms in update_and_write_commands");
     BaseController::write_state_to_hardware(joint_command_);
     return controller_interface::return_type::ERROR;
+  }
+
+  // get jacobian
+  Eigen::Matrix<double, 6, Eigen::Dynamic> J;
+  success &= ik_solver_->calculate_jacobian(joint_cur_pos, base_controller_parameters_.kinematics.robot_end_effector, J);
+
+  // get target pose and nullspace joint positions from reference
+  Eigen::Matrix<double, 6, 1> target_twist;
+  if (using_twist_reference_) {
+    // get twist msg
+    target_twist[0] = twist_reference_.twist.linear.x;
+    target_twist[1] = twist_reference_.twist.linear.y;
+    target_twist[2] = twist_reference_.twist.linear.z;
+    target_twist[3] = twist_reference_.twist.angular.x;
+    target_twist[4] = twist_reference_.twist.angular.y;
+    target_twist[5] = twist_reference_.twist.angular.z;
+  } 
+  else if (using_joint_reference_) {
+    // get reference twist
+    target_twist = J * joint_ref_vel; 
+  }
+  else {
+    RCLCPP_ERROR(get_node()->get_logger(), "Invalid reference provided");
+    BaseController::write_state_to_hardware(joint_command_);
+    return controller_interface::return_type::OK;
   }
 
   // get identity
@@ -198,64 +189,32 @@ controller_interface::return_type PoseController::update_and_write_commands(
   // get current twist
   Eigen::Matrix<double, 6, 1> current_twist = J * joint_des_vel; // TODO: use joint_des_vel_ or joint_cur_vel_?
 
-  // get kp and kd matrices
-  Eigen::Matrix<double, 6, 6> kp_matrix;
-  create_gain_matrix(kp_, control_frame, kp_matrix);
+  // get kd matrices
   Eigen::Matrix<double, 6, 6> kd_matrix;
   create_gain_matrix(kd_, control_frame, kd_matrix);
 
-  // calculate spatial error
-  Eigen::Matrix<double, 6, 1> pose_error;
-  pose_error.block<3, 1>(0, 0) =
-    current_pose.translation() - target_pose.translation();
-  auto R = current_pose.rotation() * target_pose.rotation().transpose();
-  auto angle_axis = Eigen::AngleAxisd(R);
-  pose_error.block<3, 1>(3, 0) = angle_axis.angle() * angle_axis.axis();
+  // calculate control law in base frame
+  Eigen::Matrix<double, 6, 1> net_error = target_twist;
 
-  // create velocity scaling in control frame
-  Eigen::Matrix<double, 6, 1> control_twist;
-  Eigen::Matrix<double, 6, 1> scaling_factor;
-  control_twist.block<3, 1>(0, 0) = control_frame.rotation().transpose() * current_twist.block<3, 1>(0, 0);
-  control_twist.block<3, 1>(3, 0) = control_frame.rotation().transpose() * current_twist.block<3, 1>(3, 0);
-  for (size_t i = 0; i < 6; ++i)
-  {
-    if (std::abs(control_twist[i]) > std::abs(max_twist_[i]))
-    {
-      scaling_factor[i] = std::abs(max_twist_[i]) / std::abs(control_twist[i]);
-    }   
-    else
-    {
-      scaling_factor[i] = 1.0;
-    }   
-  }
-  Eigen::Matrix<double, 6, 6> scaling_factor_matrix;
-  create_gain_matrix(scaling_factor, control_frame, scaling_factor_matrix);
-  // scaling_factor_matrix.setIdentity();
-
-  // calculate  control law in base frame
-  Eigen::Matrix<double, 6, 1> net_force = scaling_factor_matrix * (- kd_matrix * current_twist - kp_matrix * pose_error);
+  RCLCPP_INFO(get_node()->get_logger(), "Target Twist: %f %f %f %f %f %f", 
+    target_twist[0], target_twist[1], target_twist[2], target_twist[3], target_twist[4], target_twist[5]);
 
   // forward dynamics solver
-  ik_solver_->forwardDynamics(
+  ik_solver_->selectivelyDampedLeastSquares(
     joint_cur_pos, 
-    net_force, 
+    net_error, 
     base_controller_parameters_.kinematics.robot_end_effector, 
-    joint_des_acc
+    joint_des_vel
   );
 
   // nullspace kp and kd
-  joint_des_acc += (I - J.transpose() * J_pinv) *
-                    (
-                      nullspace_kp_.asDiagonal() * (nullspace_joint_pos - joint_cur_pos) -
-                      nullspace_kd_.asDiagonal() * joint_des_vel
-                    );
-
-  // more joint damping because why not
-  joint_des_acc -= pose_controller_parameters_.diff_ik.joint_damping * joint_des_vel;
+  // joint_des_vel += (I - J.transpose() * J_pinv) *
+  //                   (
+  //                     nullspace_kp_.asDiagonal() * (nullspace_joint_pos_ - joint_cur_pos) -
+  //                     nullspace_kd_.asDiagonal() * joint_des_vel
+  //                   );
 
   // integrate
-  joint_des_vel += period.seconds() * joint_des_acc;
-  joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
   joint_des_pos += period.seconds() * joint_des_vel;
 
   // Numerical time integration with the Euler forward method
@@ -281,4 +240,4 @@ controller_interface::return_type PoseController::update_and_write_commands(
 #include "pluginlib/class_list_macros.hpp"
 
 PLUGINLIB_EXPORT_CLASS(
-  manipulator_controllers::PoseController, controller_interface::ChainableControllerInterface)
+  manipulator_controllers::TwistController, controller_interface::ChainableControllerInterface)

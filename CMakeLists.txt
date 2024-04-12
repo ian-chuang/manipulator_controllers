@@ -49,25 +49,49 @@ generate_parameter_library(pose_controller_parameters
 generate_parameter_library(impedance_pose_controller_parameters
   src/impedance_pose_controller_parameters.yaml
 )
+generate_parameter_library(twist_controller_parameters
+  src/twist_controller_parameters.yaml
+)
 
 # pose_controller
-# add_library(pose_controller SHARED
-#   src/pose_controller.cpp
-#   src/base_controller.cpp
-#   src/ik_solver.cpp
-# )
-# target_compile_features(pose_controller PUBLIC cxx_std_17)
-# target_include_directories(pose_controller PUBLIC
-#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-#   $<INSTALL_INTERFACE:include>
-# )
-# target_link_libraries(pose_controller PUBLIC
-#   base_controller_parameters
-#   pose_controller_parameters
-#   Eigen3::Eigen
-# )
-# ament_target_dependencies(pose_controller PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS})
-# pluginlib_export_plugin_description_file(controller_interface pose_controller.xml)
+add_library(pose_controller SHARED
+  src/pose_controller.cpp
+  src/base_controller.cpp
+  src/ik_solver.cpp
+  src/fk_solver.cpp
+)
+target_compile_features(pose_controller PUBLIC cxx_std_17)
+target_include_directories(pose_controller PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(pose_controller PUBLIC
+  base_controller_parameters
+  pose_controller_parameters
+  Eigen3::Eigen
+)
+ament_target_dependencies(pose_controller PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS})
+pluginlib_export_plugin_description_file(controller_interface pose_controller.xml)
+
+# twist_controller
+add_library(twist_controller SHARED
+  src/twist_controller.cpp
+  src/base_controller.cpp
+  src/ik_solver.cpp
+  src/fk_solver.cpp
+)
+target_compile_features(twist_controller PUBLIC cxx_std_17)
+target_include_directories(twist_controller PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(twist_controller PUBLIC
+  base_controller_parameters
+  twist_controller_parameters
+  Eigen3::Eigen
+)
+ament_target_dependencies(twist_controller PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS})
+pluginlib_export_plugin_description_file(controller_interface twist_controller.xml)
 
 # impedance_pose_controller
 add_library(impedance_pose_controller SHARED
@@ -100,11 +124,14 @@ install(
 
 install(
   TARGETS 
-    # pose_controller 
+    pose_controller 
+    twist_controller
     impedance_pose_controller
     base_controller_parameters
     base_force_controller_parameters
     impedance_pose_controller_parameters
+    pose_controller_parameters
+    twist_controller_parameters
 
   EXPORT 
     export_manipulator_controllers

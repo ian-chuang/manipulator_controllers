@@ -10,7 +10,9 @@
   <license>Apache License 2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
 
+  <depend>rclpy</depend>
   <depend>backward_ros</depend>
   <depend>control_msgs</depend>
   <depend>control_toolbox</depend>
@@ -33,6 +35,8 @@
   <depend>kdl_parser</depend>
   <depend>tf2_eigen_kdl</depend>
   <depend>std_srvs</depend>
+  <depend>joy</depend>
+  <depend>sensor_msgs</depend>
 
   <test_depend>ament_cmake_gmock</test_depend>
   <test_depend>controller_manager</test_depend>

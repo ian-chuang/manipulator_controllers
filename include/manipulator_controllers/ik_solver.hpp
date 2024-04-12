@@ -29,11 +29,18 @@ public:
     const Eigen::VectorXd & joint_pos, const std::string & link_name,
     Eigen::Matrix<double, 6, Eigen::Dynamic> & jacobian);
 
-  void task_force_to_joint_acc(
+  void forwardDynamics(
     const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos, 
     const Eigen::Matrix<double, 6, 1> & net_force,
     const std::string & link_name,
     Eigen::VectorXd & joint_acc
+  );
+
+  void selectivelyDampedLeastSquares(
+    const Eigen::Matrix<double, Eigen::Dynamic, 1> & joint_pos, 
+    const Eigen::Matrix<double, 6, 1> & net_error,
+    const std::string & link_name,
+    Eigen::VectorXd & joint_vel
   );
 
 private:
@@ -43,6 +50,9 @@ private:
   bool verify_jacobian(const Eigen::Matrix<double, 6, Eigen::Dynamic> & jacobian);
 
   bool buildGenericModel();
+
+  Eigen::Matrix<double, Eigen::Dynamic, 1> clampMaxAbs(
+    const Eigen::Matrix<double, Eigen::Dynamic, 1> & w, double d);
 
   bool initialized_ = false;
 

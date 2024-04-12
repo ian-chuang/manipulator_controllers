@@ -265,7 +265,7 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   
 
   // forward dynamics solver
-  ik_solver_->task_force_to_joint_acc(
+  ik_solver_->forwardDynamics(
     joint_cur_pos, 
     net_force, 
     base_controller_parameters_.kinematics.robot_end_effector, 
