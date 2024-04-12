@@ -244,9 +244,9 @@ controller_interface::return_type PoseController::update_and_write_commands(
   );
 
   // nullspace kp and kd
-  joint_des_acc += (I - J.transpose() * J_pinv) *
+  joint_des_acc += (I - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
                     (
-                      nullspace_kp_.asDiagonal() * (nullspace_joint_pos - joint_cur_pos) -
+                      nullspace_kp_.asDiagonal() * (nullspace_joint_pos_ - joint_cur_pos) -
                       nullspace_kd_.asDiagonal() * joint_des_vel
                     );
 

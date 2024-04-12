@@ -1,0 +1,9 @@
+<library path="impedance_twist_controller">
+  <class name="manipulator_controllers/ImpedanceTwistController"
+         type="manipulator_controllers::ImpedanceTwistController"
+         base_class_type="controller_interface::ChainableControllerInterface">
+    <description>
+      ImpedanceTwistController ros2_control controller.
+    </description>
+  </class>
+</library>

@@ -184,7 +184,7 @@ controller_interface::return_type TwistController::update_and_write_commands(
 
   // get jacobian pseudo inverse
   Eigen::MatrixXd J_pinv;
-  pseudo_inverse(J.transpose(), J_pinv);
+  pseudo_inverse(J, J_pinv);
 
   // get current twist
   Eigen::Matrix<double, 6, 1> current_twist = J * joint_des_vel; // TODO: use joint_des_vel_ or joint_cur_vel_?
@@ -194,27 +194,29 @@ controller_interface::return_type TwistController::update_and_write_commands(
   create_gain_matrix(kd_, control_frame, kd_matrix);
 
   // calculate control law in base frame
-  Eigen::Matrix<double, 6, 1> net_error = target_twist;
+  Eigen::Matrix<double, 6, 1> net_error = kd_matrix * (target_twist - current_twist);
 
   RCLCPP_INFO(get_node()->get_logger(), "Target Twist: %f %f %f %f %f %f", 
     target_twist[0], target_twist[1], target_twist[2], target_twist[3], target_twist[4], target_twist[5]);
 
   // forward dynamics solver
-  ik_solver_->selectivelyDampedLeastSquares(
+  ik_solver_->forwardDynamics(
     joint_cur_pos, 
     net_error, 
     base_controller_parameters_.kinematics.robot_end_effector, 
-    joint_des_vel
+    joint_des_acc
   );
 
   // nullspace kp and kd
-  // joint_des_vel += (I - J.transpose() * J_pinv) *
-  //                   (
-  //                     nullspace_kp_.asDiagonal() * (nullspace_joint_pos_ - joint_cur_pos) -
-  //                     nullspace_kd_.asDiagonal() * joint_des_vel
-  //                   );
+  joint_des_acc += (I - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
+                    (
+                      nullspace_kp_.asDiagonal() * (nullspace_joint_pos_ - joint_cur_pos) -
+                      nullspace_kd_.asDiagonal() * joint_des_vel
+                    );
 
   // integrate
+  joint_des_vel += period.seconds() * joint_des_acc;
+  joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
   joint_des_pos += period.seconds() * joint_des_vel;
 
   // Numerical time integration with the Euler forward method
