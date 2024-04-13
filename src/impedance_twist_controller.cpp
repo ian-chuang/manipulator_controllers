@@ -190,16 +190,14 @@ controller_interface::return_type ImpedanceTwistController::update_and_write_com
     return controller_interface::return_type::OK;
   }
 
-
-  // get identity
-  auto I = Eigen::MatrixXd::Identity(num_joints_,num_joints_);
-
   // get current twist
   Eigen::Matrix<double, 6, 1> current_twist = J * joint_des_vel; // TODO: use joint_des_vel_ or joint_cur_vel_?
 
   // get stiffness and damping matrices
   Eigen::Matrix<double, 6, 6> damping_matrix;
   create_gain_matrix(damping_, control_frame, damping_matrix);
+
+  // TODO transform twist to control frame
 
   // zero out any forces in the control frame
   Eigen::Matrix<double, 6, 1> control_wrench;
@@ -231,7 +229,7 @@ controller_interface::return_type ImpedanceTwistController::update_and_write_com
   );
 
   // nullspace stiffness and damping
-  joint_des_acc += (I - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
+  joint_des_acc += (Eigen::MatrixXd::Identity(num_joints_,num_joints_) - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
                     (
                       nullspace_stiffness_.asDiagonal() * (nullspace_joint_pos_ - joint_cur_pos) -
                       nullspace_damping_.asDiagonal() * joint_des_vel

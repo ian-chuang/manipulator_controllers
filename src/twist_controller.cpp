@@ -6,7 +6,7 @@ namespace manipulator_controllers
 
 bool TwistController::set_params() 
 {
-  vec_to_eigen(twist_controller_parameters_.diff_ik.control.kd, kd_);
+  vec_to_eigen(twist_controller_parameters_.diff_ik.control.kp, kp_);
  
   // nullspace joint position check that size is correct
   if (twist_controller_parameters_.diff_ik.nullspace.joint_positions.size() != num_joints_)
@@ -179,25 +179,15 @@ controller_interface::return_type TwistController::update_and_write_commands(
     return controller_interface::return_type::OK;
   }
 
-  // get identity
-  auto I = Eigen::MatrixXd::Identity(num_joints_,num_joints_);
-
-  // get jacobian pseudo inverse
-  Eigen::MatrixXd J_pinv;
-  pseudo_inverse(J, J_pinv);
-
   // get current twist
   Eigen::Matrix<double, 6, 1> current_twist = J * joint_des_vel; // TODO: use joint_des_vel_ or joint_cur_vel_?
 
   // get kd matrices
-  Eigen::Matrix<double, 6, 6> kd_matrix;
-  create_gain_matrix(kd_, control_frame, kd_matrix);
+  Eigen::Matrix<double, 6, 6> kp_matrix;
+  create_gain_matrix(kp_, control_frame, kp_matrix);
 
   // calculate control law in base frame
-  Eigen::Matrix<double, 6, 1> net_error = kd_matrix * (target_twist - current_twist);
-
-  RCLCPP_INFO(get_node()->get_logger(), "Target Twist: %f %f %f %f %f %f", 
-    target_twist[0], target_twist[1], target_twist[2], target_twist[3], target_twist[4], target_twist[5]);
+  Eigen::Matrix<double, 6, 1> net_error = kp_matrix * (target_twist - current_twist);
 
   // forward dynamics solver
   ik_solver_->forwardDynamics(
@@ -208,7 +198,7 @@ controller_interface::return_type TwistController::update_and_write_commands(
   );
 
   // nullspace kp and kd
-  joint_des_acc += (I - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
+  joint_des_acc += (Eigen::MatrixXd::Identity(num_joints_,num_joints_) - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
                     (
                       nullspace_kp_.asDiagonal() * (nullspace_joint_pos_ - joint_cur_pos) -
                       nullspace_kd_.asDiagonal() * joint_des_vel

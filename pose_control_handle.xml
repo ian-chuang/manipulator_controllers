@@ -1,0 +1,11 @@
+<library path="pose_control_handle">
+
+  <class name="manipulator_controllers/PoseControlHandle"
+         type="manipulator_controllers::PoseControlHandle"
+         base_class_type="controller_interface::ControllerInterface">
+    <description>
+      The CartesianControllerHandle exposes an interactive marker for end-effector control in Rviz.
+    </description>
+  </class>
+
+</library>

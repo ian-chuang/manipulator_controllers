@@ -36,7 +36,7 @@ protected:
   std::shared_ptr<twist_controller::ParamListener> twist_controller_parameter_handler_;
   twist_controller::Params twist_controller_parameters_;
 
-  Eigen::Matrix<double, 6, 1> kd_;
+  Eigen::Matrix<double, 6, 1> kp_;
   Eigen::VectorXd nullspace_joint_pos_;
   Eigen::VectorXd nullspace_kp_;
   Eigen::VectorXd nullspace_kd_ratio_;

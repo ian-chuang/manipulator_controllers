@@ -375,6 +375,8 @@ controller_interface::CallbackReturn BaseController::on_activate(
   using_twist_reference_ = false;
   using_wrench_reference_ = false;
 
+  write_state_to_hardware(joint_command_);
+
   return controller_interface::CallbackReturn::SUCCESS;
 }
 

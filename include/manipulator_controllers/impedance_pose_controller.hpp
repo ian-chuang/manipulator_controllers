@@ -41,23 +41,12 @@ protected:
   Eigen::Matrix<double, 6, 1> damping_ratio_;
   Eigen::Matrix<double, 6, 1> damping_;
   Eigen::Matrix<double, 6, 1> selected_axes_;
-  // Eigen::Matrix<double, 6, 1> mass_;
-  // Eigen::Matrix<double, 6, 1> mass_inv_;
   Eigen::Matrix<double, 6, 1> error_scale_;
   Eigen::Matrix<double, 6, 1> max_spring_force_;
-  // Eigen::VectorXd joint_ref_pos_;
-  // Eigen::VectorXd joint_cur_pos_;
-  // Eigen::VectorXd joint_cur_vel_;
-  // Eigen::VectorXd joint_des_pos_;
-  // Eigen::VectorXd joint_des_vel_;
-  // Eigen::VectorXd joint_des_acc_;
   Eigen::VectorXd nullspace_joint_pos_;
   Eigen::VectorXd nullspace_stiffness_;
   Eigen::VectorXd nullspace_damping_ratio_;
   Eigen::VectorXd nullspace_damping_;
-  
-  // Eigen::MatrixXd I_;
-
 
 };
 

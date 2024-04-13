@@ -27,6 +27,8 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   kdl_parser
   tf2_eigen_kdl
   std_srvs
+  interactive_markers
+  visualization_msgs
 )
 
 find_package(ament_cmake REQUIRED)
@@ -140,6 +142,21 @@ target_link_libraries(impedance_twist_controller PUBLIC
 ament_target_dependencies(impedance_twist_controller PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS})
 pluginlib_export_plugin_description_file(controller_interface impedance_twist_controller.xml)
 
+# pose_controller
+add_library(pose_control_handle SHARED
+  src/pose_control_handle.cpp
+)
+target_compile_features(pose_control_handle PUBLIC cxx_std_17)
+target_include_directories(pose_control_handle PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(pose_control_handle PUBLIC
+  Eigen3::Eigen # TODO is this necessary
+)
+ament_target_dependencies(pose_control_handle PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS})
+pluginlib_export_plugin_description_file(controller_interface pose_control_handle.xml)
+
 # install
 
 install(
@@ -159,6 +176,7 @@ install(
     pose_controller_parameters
     twist_controller_parameters
     impedance_twist_controller_parameters
+    pose_control_handle
 
   EXPORT 
     export_manipulator_controllers

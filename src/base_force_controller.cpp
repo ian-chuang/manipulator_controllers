@@ -3,8 +3,6 @@
 namespace manipulator_controllers
 {
 
-
-
 controller_interface::CallbackReturn BaseForceController::on_init()
 {
   auto ret = BaseController::on_init();

@@ -12,9 +12,6 @@ bool ImpedancePoseController::set_params()
   vec_to_eigen(impedance_pose_controller_parameters_.impedance.control.max_spring_force, max_spring_force_);
   for (size_t i = 0; i < 6; ++i)
   {
-    // mass_inv_[i] = 1.0 / mass_[i];
-    // damping_[i] = damping_ratio_[i] * 2 * sqrt(mass_[i] * stiffness_[i]);
-
     damping_[i] = damping_ratio_[i] * 2 * sqrt(stiffness_[i]);
   }
 
@@ -202,13 +199,6 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
     return controller_interface::return_type::ERROR;
   }
 
-  // get identity
-  auto I = Eigen::MatrixXd::Identity(num_joints_,num_joints_);
-
-  // get jacobian pseudo inverse
-  Eigen::MatrixXd J_pinv;
-  pseudo_inverse(J.transpose(), J_pinv);
-
   // get current twist
   Eigen::Matrix<double, 6, 1> current_twist = J * joint_des_vel; // TODO: use joint_des_vel_ or joint_cur_vel_?
 
@@ -250,19 +240,7 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   net_force.block<3, 1>(3, 0) = control_frame.rotation().transpose() * net_force.block<3, 1>(3, 0);
   net_force = net_force.cwiseProduct(error_scale_);
   net_force.block<3, 1>(0, 0) = control_frame.rotation() * net_force.block<3, 1>(0, 0);
-  net_force.block<3, 1>(3, 0) = control_frame.rotation() * net_force.block<3, 1>(3, 0);
-
-  
-  //damped inverse
-  //Compute admittance control law in the base frame: F = M*x_ddot + D*x_dot + K*x
-  // Eigen::Matrix<double, 6, 1> task_des_acc = 
-  //   mass_inv_.cwiseProduct( - damping_matrix * current_twist - clip(stiffness_matrix * pose_error, -max_spring_force_, max_spring_force_));
-  // Eigen::Matrix<double, Eigen::Dynamic, 6> J_inverse =
-  //    (J.transpose() * J + impedance_pose_controller_parameters_.impedance.pinv_damping * I).inverse() * J.transpose();
-  // joint_des_acc = J_inverse * task_des_acc;
-
-
-  
+  net_force.block<3, 1>(3, 0) = control_frame.rotation() * net_force.block<3, 1>(3, 0);  
 
   // forward dynamics solver
   ik_solver_->forwardDynamics(
@@ -273,9 +251,9 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   );
 
   // nullspace stiffness and damping
-  joint_des_acc += (I - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
+  joint_des_acc += (Eigen::MatrixXd::Identity(num_joints_,num_joints_) - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
                     (
-                      nullspace_stiffness_.asDiagonal() * (nullspace_joint_pos_ - joint_cur_pos) -
+                      nullspace_stiffness_.asDiagonal() * (nullspace_joint_pos - joint_cur_pos) -
                       nullspace_damping_.asDiagonal() * joint_des_vel
                     );
 
@@ -286,11 +264,6 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
   joint_des_vel += period.seconds() * joint_des_acc;
   joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
   joint_des_pos += period.seconds() * joint_des_vel;
-
-  // Numerical time integration with the Euler forward method
-  // joint_des_pos += joint_des_vel * period.seconds();
-  // joint_des_vel += joint_des_acc * period.seconds();
-  // joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
 
   // write commands
   for (size_t i = 0; i < num_joints_; ++i)

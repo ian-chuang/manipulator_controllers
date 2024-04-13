@@ -230,7 +230,6 @@ controller_interface::return_type PoseController::update_and_write_commands(
   }
   Eigen::Matrix<double, 6, 6> scaling_factor_matrix;
   create_gain_matrix(scaling_factor, control_frame, scaling_factor_matrix);
-  // scaling_factor_matrix.setIdentity();
 
   // calculate  control law in base frame
   Eigen::Matrix<double, 6, 1> net_force = scaling_factor_matrix * (- kd_matrix * current_twist - kp_matrix * pose_error);
@@ -246,7 +245,7 @@ controller_interface::return_type PoseController::update_and_write_commands(
   // nullspace kp and kd
   joint_des_acc += (I - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
                     (
-                      nullspace_kp_.asDiagonal() * (nullspace_joint_pos_ - joint_cur_pos) -
+                      nullspace_kp_.asDiagonal() * (nullspace_joint_pos - joint_cur_pos) -
                       nullspace_kd_.asDiagonal() * joint_des_vel
                     );
 
