@@ -29,6 +29,7 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   std_srvs
   interactive_markers
   visualization_msgs
+  urdf
 )
 
 find_package(ament_cmake REQUIRED)

@@ -38,6 +38,7 @@ protected:
   impedance_twist_controller::Params impedance_twist_controller_parameters_;
 
   Eigen::Matrix<double, 6, 1> damping_;
+  Eigen::Matrix<double, 6, 1> max_damping_force_;
   Eigen::Matrix<double, 6, 1> selected_axes_;
   Eigen::Matrix<double, 6, 1> error_scale_;
   Eigen::VectorXd nullspace_joint_pos_;

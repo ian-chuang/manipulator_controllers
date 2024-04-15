@@ -6,6 +6,7 @@ namespace manipulator_controllers
 bool ImpedanceTwistController::set_params() 
 {
   vec_to_eigen(impedance_twist_controller_parameters_.impedance.control.damping, damping_);
+  vec_to_eigen(impedance_twist_controller_parameters_.impedance.control.max_damping_force, max_damping_force_);
   vec_to_eigen(impedance_twist_controller_parameters_.impedance.control.selected_axes, selected_axes_);
   vec_to_eigen(impedance_twist_controller_parameters_.impedance.control.error_scale, error_scale_);
 
@@ -197,7 +198,9 @@ controller_interface::return_type ImpedanceTwistController::update_and_write_com
   Eigen::Matrix<double, 6, 6> damping_matrix;
   create_gain_matrix(damping_, control_frame, damping_matrix);
 
-  // TODO transform twist to control frame
+  // transform twist to control frame
+  target_twist.block<3, 1>(0, 0) = control_frame.rotation().transpose() * target_twist.block<3, 1>(0, 0);
+  target_twist.block<3, 1>(3, 0) = control_frame.rotation().transpose() * target_twist.block<3, 1>(3, 0);
 
   // zero out any forces in the control frame
   Eigen::Matrix<double, 6, 1> control_wrench;
@@ -207,8 +210,16 @@ controller_interface::return_type ImpedanceTwistController::update_and_write_com
   base_wrench.block<3, 1>(0, 0) = control_frame.rotation() * control_wrench.block<3, 1>(0, 0);
   base_wrench.block<3, 1>(3, 0) = control_frame.rotation() * control_wrench.block<3, 1>(3, 0);
 
+  // apply max spring force in the control frame
+  Eigen::Matrix<double, 6, 1> damping_force = damping_matrix * (current_twist - target_twist);
+  damping_force.block<3, 1>(0, 0) = control_frame.rotation().transpose() * damping_force.block<3, 1>(0, 0);
+  damping_force.block<3, 1>(3, 0) = control_frame.rotation().transpose() * damping_force.block<3, 1>(3, 0);
+  damping_force = clip(damping_force, -max_damping_force_, max_damping_force_);
+  damping_force.block<3, 1>(0, 0) = control_frame.rotation() * damping_force.block<3, 1>(0, 0);
+  damping_force.block<3, 1>(3, 0) = control_frame.rotation() * damping_force.block<3, 1>(3, 0);
+
   // calculate impedance control law in base frame
-  Eigen::Matrix<double, 6, 1> net_force = base_wrench - damping_matrix * (current_twist - target_twist);
+  Eigen::Matrix<double, 6, 1> net_force = base_wrench - damping_force;
 
   // apply error scale in the control frame
   net_force.block<3, 1>(0, 0) = control_frame.rotation().transpose() * net_force.block<3, 1>(0, 0);
@@ -235,8 +246,13 @@ controller_interface::return_type ImpedanceTwistController::update_and_write_com
                       nullspace_damping_.asDiagonal() * joint_des_vel
                     );
 
-  // more joint damping because why not
-  joint_des_acc -= impedance_twist_controller_parameters_.impedance.joint_damping * joint_des_vel;
+  // add joint damping if current twist is small (both translational and rotational)
+  // must be below both linear threshold and angular threshold
+  if (current_twist.block<3, 1>(0, 0).norm() < impedance_twist_controller_parameters_.impedance.joint_damping.lin_vel_threshold &&
+      current_twist.block<3, 1>(3, 0).norm() < impedance_twist_controller_parameters_.impedance.joint_damping.ang_vel_threshold)
+  {
+    joint_des_acc -= impedance_twist_controller_parameters_.impedance.joint_damping.damping * joint_des_vel;
+  }
 
   // integrate
   joint_des_vel += period.seconds() * joint_des_acc;

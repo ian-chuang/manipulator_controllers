@@ -188,13 +188,6 @@ controller_interface::return_type PoseController::update_and_write_commands(
     return controller_interface::return_type::ERROR;
   }
 
-  // get identity
-  auto I = Eigen::MatrixXd::Identity(num_joints_,num_joints_);
-
-  // get jacobian pseudo inverse
-  Eigen::MatrixXd J_pinv;
-  pseudo_inverse(J.transpose(), J_pinv);
-
   // get current twist
   Eigen::Matrix<double, 6, 1> current_twist = J * joint_des_vel; // TODO: use joint_des_vel_ or joint_cur_vel_?
 
@@ -243,14 +236,19 @@ controller_interface::return_type PoseController::update_and_write_commands(
   );
 
   // nullspace kp and kd
-  joint_des_acc += (I - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
+  joint_des_acc += (Eigen::MatrixXd::Identity(num_joints_,num_joints_) - (J.completeOrthogonalDecomposition().pseudoInverse() * J)) *
                     (
                       nullspace_kp_.asDiagonal() * (nullspace_joint_pos - joint_cur_pos) -
                       nullspace_kd_.asDiagonal() * joint_des_vel
                     );
 
-  // more joint damping because why not
-  joint_des_acc -= pose_controller_parameters_.diff_ik.joint_damping * joint_des_vel;
+  // add joint damping if current twist is small (both translational and rotational)
+  // must be below both linear threshold and angular threshold
+  if (current_twist.block<3, 1>(0, 0).norm() < pose_controller_parameters_.diff_ik.joint_damping.lin_vel_threshold &&
+      current_twist.block<3, 1>(3, 0).norm() < pose_controller_parameters_.diff_ik.joint_damping.ang_vel_threshold)
+  {
+    joint_des_acc -= pose_controller_parameters_.diff_ik.joint_damping.damping * joint_des_vel;
+  }
 
   // integrate
   joint_des_vel += period.seconds() * joint_des_acc;

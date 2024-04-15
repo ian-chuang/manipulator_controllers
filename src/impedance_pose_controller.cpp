@@ -257,13 +257,23 @@ controller_interface::return_type ImpedancePoseController::update_and_write_comm
                       nullspace_damping_.asDiagonal() * joint_des_vel
                     );
 
-  // more joint damping because why not
-  joint_des_acc -= impedance_pose_controller_parameters_.impedance.joint_damping * joint_des_vel;
+  // add joint damping if current twist is small (both translational and rotational)
+  // must be below both linear threshold and angular threshold
+  if (current_twist.block<3, 1>(0, 0).norm() < impedance_pose_controller_parameters_.impedance.joint_damping.lin_vel_threshold &&
+      current_twist.block<3, 1>(3, 0).norm() < impedance_pose_controller_parameters_.impedance.joint_damping.ang_vel_threshold)
+  {
+    joint_des_acc -= impedance_pose_controller_parameters_.impedance.joint_damping.damping * joint_des_vel;
+  }
 
   // integrate
   joint_des_vel += period.seconds() * joint_des_acc;
   joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
   joint_des_pos += period.seconds() * joint_des_vel;
+
+  // Numerical time integration with the Euler forward method
+  // joint_des_pos += joint_des_vel * period.seconds();
+  // joint_des_vel += joint_des_acc * period.seconds();
+  // joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
 
   // write commands
   for (size_t i = 0; i < num_joints_; ++i)

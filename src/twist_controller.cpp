@@ -186,6 +186,10 @@ controller_interface::return_type TwistController::update_and_write_commands(
   Eigen::Matrix<double, 6, 6> kp_matrix;
   create_gain_matrix(kp_, control_frame, kp_matrix);
 
+  // transform twist to control frame
+  target_twist.block<3, 1>(0, 0) = control_frame.rotation().transpose() * target_twist.block<3, 1>(0, 0);
+  target_twist.block<3, 1>(3, 0) = control_frame.rotation().transpose() * target_twist.block<3, 1>(3, 0);
+
   // calculate control law in base frame
   Eigen::Matrix<double, 6, 1> net_error = kp_matrix * (target_twist - current_twist);
 
@@ -203,6 +207,14 @@ controller_interface::return_type TwistController::update_and_write_commands(
                       nullspace_kp_.asDiagonal() * (nullspace_joint_pos_ - joint_cur_pos) -
                       nullspace_kd_.asDiagonal() * joint_des_vel
                     );
+
+  // add joint damping if current twist is small (both translational and rotational)
+  // must be below both linear threshold and angular threshold
+  if (current_twist.block<3, 1>(0, 0).norm() < twist_controller_parameters_.diff_ik.joint_damping.lin_vel_threshold &&
+      current_twist.block<3, 1>(3, 0).norm() < twist_controller_parameters_.diff_ik.joint_damping.ang_vel_threshold)
+  {
+    joint_des_acc -= twist_controller_parameters_.diff_ik.joint_damping.damping * joint_des_vel;
+  }
 
   // integrate
   joint_des_vel += period.seconds() * joint_des_acc;

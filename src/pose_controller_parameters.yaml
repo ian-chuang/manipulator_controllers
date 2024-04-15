@@ -44,11 +44,28 @@ pose_controller:
         description: "Specifies the joint positions used in the nullspace controller.",
       }
 
-    joint_damping: {
-      type: double,
-      description: "Specifies the joint damping applied used in the admittance calculation.",
-      default_value: 0.0,
-      validation: {
-        gt_eq: [ 0.0 ]
+    joint_damping: 
+      damping: {
+        type: double,
+        description: "Specifies the joint damping applied used in the admittance calculation.",
+        default_value: 0.0,
+        validation: {
+          gt_eq: [ 0.0 ]
+        }
       }
-    }
+      lin_vel_threshold: {
+        type: double,
+        description: "Specifies the joint damping applied used in the admittance calculation.",
+        default_value: 0.01,
+        validation: {
+          gt_eq: [ 0.0 ]
+        }
+      }
+      ang_vel_threshold: {
+        type: double,
+        description: "Specifies the joint damping applied used in the admittance calculation.",
+        default_value: 0.05,
+        validation: {
+          gt_eq: [ 0.0 ]
+        }
+      }
