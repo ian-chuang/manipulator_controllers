@@ -17,6 +17,11 @@ base_force_controller:
       default_value: 0.05,
       description: "Specifies the filter coefficient for the sensor's exponential filter."
     }
+    zero_ft_sensor: {
+      type: bool,
+      default_value: true,
+      description: "Specifies if the force torque sensor should be zeroed."
+    }
     gravity_compensation:
       gravity_frame: {
         type: string,

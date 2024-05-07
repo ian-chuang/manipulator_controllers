@@ -210,11 +210,13 @@ void BaseForceController::process_wrench_measurements(
   world_wrench -= gravity_compensation;
 
   // zero wrench if flag is set
-  if (zero_wrench_flag_.load()) {
-    zero_wrench_offset_ = world_wrench;
-    zero_wrench_flag_.store(false);
+  if (base_force_controller_parameters_.ft_sensor.zero_ft_sensor) {
+    if (zero_wrench_flag_.load()) {
+      zero_wrench_offset_ = world_wrench;
+      zero_wrench_flag_.store(false);
+    }
+    world_wrench -= zero_wrench_offset_;
   }
-  world_wrench -= zero_wrench_offset_;
 
   // transform back to sensor frame
   sensor_wrench.block<3, 1>(0, 0) = world_sensor_transform.rotation().transpose() * world_wrench.block<3, 1>(0, 0);
