@@ -251,14 +251,14 @@ controller_interface::return_type PoseController::update_and_write_commands(
   }
 
   // integrate
-  joint_des_vel += period.seconds() * joint_des_acc;
-  joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
-  joint_des_pos += period.seconds() * joint_des_vel;
+  // joint_des_vel += period.seconds() * joint_des_acc;
+  // joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
+  // joint_des_pos += period.seconds() * joint_des_vel;
 
   // Numerical time integration with the Euler forward method
-  // joint_des_pos += joint_des_vel * period.seconds();
-  // joint_des_vel += joint_des_acc * period.seconds();
-  // joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
+  joint_des_pos += joint_des_vel * period.seconds();
+  joint_des_vel += joint_des_acc * period.seconds();
+  joint_des_vel  *= 0.9;  // 10 % global damping against unwanted null space motion.
 
   // write commands
   for (size_t i = 0; i < num_joints_; ++i)
